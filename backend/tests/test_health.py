@@ -1,4 +1,4 @@
-from main import _clean
+from app.utils import _clean
 
 
 def test_root_returns_welcome(client):

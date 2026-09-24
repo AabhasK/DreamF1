@@ -28,24 +28,25 @@ import fastf1 as ff1  # noqa: E402
 import pandas as pd  # noqa: E402
 from fastapi import HTTPException  # noqa: E402
 
-import main  # noqa: E402
+from app import fastf1_cache, utils  # noqa: E402
+from app.routers import circuit_history, standings, telemetry  # noqa: E402
 
 YEAR = 2026
 OUT = Path(__file__).resolve().parents[2] / "frontend" / "demo-data"
 
 TELEMETRY = {
-    "race_summary": main.get_race_summary,
-    "tyres": main.get_tyre_strategy,
-    "quali": main.get_quali_laptimes,
-    "laptimes": main.get_lap_times,
-    "race_pace": main.get_race_pace,
-    "weather": main.get_weather,
-    "race_control": main.get_race_control,
-    "positions": main.get_race_positions,
-    "gaps": main.get_gap_to_leader,
-    "sector_times": main.get_sector_times,
-    "speed": main.get_speed_trace,
-    "map": main.get_circuit_map,
+    "race_summary": telemetry.get_race_summary,
+    "tyres": telemetry.get_tyre_strategy,
+    "quali": telemetry.get_quali_laptimes,
+    "laptimes": telemetry.get_lap_times,
+    "race_pace": telemetry.get_race_pace,
+    "weather": telemetry.get_weather,
+    "race_control": telemetry.get_race_control,
+    "positions": telemetry.get_race_positions,
+    "gaps": telemetry.get_gap_to_leader,
+    "sector_times": telemetry.get_sector_times,
+    "speed": telemetry.get_speed_trace,
+    "map": telemetry.get_circuit_map,
 }
 
 
@@ -56,7 +57,7 @@ def write(rel: str, payload) -> None:
 
 
 def iso(val) -> "str | None":
-    dt = main._parse_session_dt(val)
+    dt = utils._parse_session_dt(val)
     return dt.isoformat() if dt else None
 
 
@@ -74,7 +75,7 @@ def snapshot_schedule() -> list[dict]:
             "event_date": row["EventDate"].to_pydatetime().date().isoformat(),
         }
         for i in range(1, 6):
-            ev[f"session{i}_name"] = main._clean_str(row.get(f"Session{i}"))
+            ev[f"session{i}_name"] = utils._clean_str(row.get(f"Session{i}"))
             ev[f"session{i}_date"] = iso(row.get(f"Session{i}Date"))
         race_start = ev["session5_date"] or f"{ev['event_date']}T12:00:00"
         # A race counts as scored once it's ~3h past lights out — mirrors what an admin
@@ -87,7 +88,7 @@ def snapshot_schedule() -> list[dict]:
 
 def snapshot_compare_drivers(rn: int) -> int:
     """Per-driver fastest-lap channels. The demo route pairs any two on request."""
-    race = main._load_session(YEAR, rn, "R", telemetry=True)
+    race = fastf1_cache._load_session(YEAR, rn, "R", telemetry=True)
     count = 0
     for code in race.results["Abbreviation"].dropna().unique():
         try:
@@ -100,8 +101,8 @@ def snapshot_compare_drivers(rn: int) -> int:
             lt = lap["LapTime"]
             comp = lap.get("Compound")
             team = str(lap["Team"]) if pd.notna(lap.get("Team")) else ""
-            write(f"compare/{rn}/{code}", main._clean({
-                "team_slug": main._team_slug(team),
+            write(f"compare/{rn}/{code}", utils._clean({
+                "team_slug": utils._team_slug(team),
                 "lap_time": round(lt.total_seconds(), 3) if pd.notna(lt) else None,
                 "compound": str(comp) if comp is not None and pd.notna(comp) else None,
                 "distance": t["Distance"].round(1).tolist(),
@@ -129,7 +130,7 @@ def snapshot_round(rn: int) -> None:
         except Exception as e:
             write(f"telemetry/{rn}/{name}", {"_error": str(e)})
     try:
-        write(f"circuit_history/{rn}", main.get_circuit_history(YEAR, rn))
+        write(f"circuit_history/{rn}", circuit_history.get_circuit_history(YEAR, rn))
     except Exception as e:
         write(f"circuit_history/{rn}", {"_error": str(e)})
     n = snapshot_compare_drivers(rn)
@@ -147,8 +148,8 @@ if __name__ == "__main__":
     for e in events:
         if e["round_number"] not in done:
             try:
-                write(f"circuit_history/{e['round_number']}", main.get_circuit_history(YEAR, e["round_number"]))
+                write(f"circuit_history/{e['round_number']}", circuit_history.get_circuit_history(YEAR, e["round_number"]))
             except Exception as ex:
                 print(f"  circuit_history {e['round_number']}: {ex}")
-    write(f"standings/{YEAR}", main.get_standings(YEAR))
+    write(f"standings/{YEAR}", standings.get_standings(YEAR))
     print("standings: done")
