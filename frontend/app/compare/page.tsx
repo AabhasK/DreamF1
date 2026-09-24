@@ -1,21 +1,9 @@
 import NavHeader from "@/components/NavHeader"
 import CompareClient from "./CompareClient"
 import type { F1Event } from "../dashboard/page"
+import { getSchedule } from "@/lib/schedule"
 
 export const dynamic = "force-dynamic"
-
-async function getSchedule(): Promise<{ events: F1Event[]; backendDown: boolean }> {
-  try {
-    const res = await fetch(`${process.env.API_URL ?? "http://localhost:8080"}/api/schedule`, {
-      cache: "no-store",
-    })
-    if (!res.ok) return { events: [], backendDown: true }
-    const events: F1Event[] = await res.json()
-    return { events, backendDown: false }
-  } catch {
-    return { events: [], backendDown: true }
-  }
-}
 
 export default async function ComparePage() {
   const { events, backendDown } = await getSchedule()

@@ -8,6 +8,8 @@ import SeasonProgress from "./SeasonProgress"
 import NavHeader from "@/components/NavHeader"
 import Reveal from "@/components/Reveal"
 import { FLAG_CODES, getTrackImage } from "@/lib/trackData"
+import { getSchedule } from "@/lib/schedule"
+import { DEMO_MODE } from "@/lib/demo"
 
 export const dynamic = "force-dynamic"
 
@@ -30,19 +32,6 @@ export interface F1Event {
   session5_date: string | null
 }
 
-async function getSchedule(): Promise<{ events: F1Event[]; backendDown: boolean }> {
-  try {
-    const res = await fetch(`${process.env.API_URL ?? "http://localhost:8080"}/api/schedule`, {
-      cache: "no-store",
-    })
-    if (!res.ok) return { events: [], backendDown: true }
-    const events: F1Event[] = await res.json()
-    return { events, backendDown: false }
-  } catch {
-    return { events: [], backendDown: true }
-  }
-}
-
 export default async function DashboardPage() {
   const { events, backendDown } = await getSchedule()
   const today = new Date().toISOString().split("T")[0]
@@ -59,6 +48,15 @@ export default async function DashboardPage() {
   return (
     <div className="min-h-screen px-4 sm:px-6 py-6 sm:py-8 max-w-7xl mx-auto">
       <NavHeader active="dashboard" />
+
+      {DEMO_MODE && !backendDown && (
+        <div className="glass-card mt-6 px-4 py-3">
+          <p className="text-xs font-(family-name:--font-dm-mono) text-text-muted">
+            <span className="text-text-secondary">DEMO MODE</span> · live backend paused — serving a
+            snapshot of real 2026 FastF1 data. Sign in with any username to explore picks and circles.
+          </p>
+        </div>
+      )}
 
       {backendDown && (
         <div className="glass-card mt-6 p-4 border-l-2 border-f1-red">
