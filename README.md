@@ -104,7 +104,7 @@ Race classification · Lap times · Race pace · Position changes · Gaps to lea
 ```bash
 git clone https://github.com/Aabhaskhandelwal/DreamF1
 cd DreamF1
-docker compose up --build
+docker compose -f infra/compose.dev.yml up --build
 ```
 
 - Next.js app: http://localhost:3000

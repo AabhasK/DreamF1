@@ -1,3 +1,8 @@
+# Local full stack: Postgres + FastAPI + Next.js + Streamlit prototype.
+# Run from the repo root:  docker compose -f infra/compose.dev.yml up --build
+# `name` pins the project (and volume) names so they don't become "infra_*".
+name: myf1circle
+
 services:
   db:
     image: postgres:16
@@ -19,7 +24,7 @@ services:
     # IMAGE_TAG is set by the deploy workflow (github.sha). Falls back to
     # building locally when IMAGE_TAG is unset (local dev).
     image: ${ECR_REGISTRY:-local}/myf1circle-backend:${IMAGE_TAG:-local}
-    build: ./backend
+    build: ../backend
     ports:
       - "8080:8080"
     environment:
@@ -37,7 +42,7 @@ services:
       - ff1cache:/app/cache
 
   streamlit:
-    build: ./frontend-prototype
+    build: ../frontend-prototype
     ports:
       - "8501:8501"
     environment:
@@ -46,11 +51,13 @@ services:
       - backend
 
   nextjs:
-    build: ./frontend
+    build: ../frontend
     ports:
       - "3000:3000"
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8080
+      # Browser calls go to relative /api/*; the Next.js API route proxies them here
+      DEMO_MODE: "false"
+      API_URL: http://backend:8080
     depends_on:
       - backend
 

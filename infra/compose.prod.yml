@@ -1,3 +1,6 @@
+# Production stack on EC2 (db + backend). deploy.yml copies this file to
+# /opt/myf1circle/docker-compose.yml, next to the server-only .env it reads.
+
 services:
   db:
     image: postgres:16

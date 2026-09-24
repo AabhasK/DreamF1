@@ -66,7 +66,7 @@ jobs:
 
           # Sync compose file so restart policies and config stay version-controlled
           scp -i /tmp/deploy_key -o StrictHostKeyChecking=no \
-            deploy/docker-compose.yml \
+            infra/compose.prod.yml \
             ec2-user@${{ secrets.EC2_HOST }}:/opt/myf1circle/docker-compose.yml
 
           # Reclaim disk before pulling: each deploy adds a ~1.5GB image and the
