@@ -16,6 +16,8 @@ on:
 
 jobs:
   warm:
+    # Skipped while the EC2 backend is switched off (see deploy.yml).
+    if: vars.BACKEND_LIVE == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:

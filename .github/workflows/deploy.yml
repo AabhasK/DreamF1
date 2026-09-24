@@ -3,6 +3,7 @@ name: Deploy
 on:
   push:
     branches: [main]
+  workflow_dispatch: {}
 
 # Required for OIDC — GitHub runner proves its identity to AWS IAM
 # without any long-lived access keys stored as secrets
@@ -17,6 +18,10 @@ env:
 
 jobs:
   deploy-backend:
+    # EC2 is only switched on when needed (e.g. for a live demo) to save AWS credits.
+    # While it's off the frontend runs in demo mode off static snapshots, and this job
+    # is skipped instead of failing at SSH. Flip on with: gh variable set BACKEND_LIVE --body true
+    if: vars.BACKEND_LIVE == 'true'
     runs-on: ubuntu-latest
     environment: production
     steps:
