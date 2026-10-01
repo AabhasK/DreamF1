@@ -13,7 +13,25 @@ _STANDINGS_TTL = 1800  # seconds — standings only move after a race
 _standings_cache: dict[int, tuple[float, Any]] = {}
 
 
+def _race_results_by_round(erg, year: int) -> dict[int, list]:
+    """Every race result of the season, grouped by round.
+
+    Jolpica serves at most 100 rows a page (about four races), so walk every page.
+    A race that straddles a page break comes back as two frames under one round.
+    """
+    by_round: dict[int, list] = {}
+    page = erg.get_race_results(season=year, limit=100)
+    while True:
+        for rnd, frame in zip(page.description["round"], page.content):
+            by_round.setdefault(int(rnd), []).append(frame)
+        try:
+            page = page.get_next_result_page()
+        except ValueError:  # no page after this one
+            return by_round
+
+
 def _compute_standings(year: int):
+    import pandas as pd
     from fastf1.ergast import Ergast
     erg = Ergast()
 
@@ -34,8 +52,8 @@ def _compute_standings(year: int):
         return cagg.setdefault(name, dict(podiums=0, onetwo=0, poles=0, fl=0))
 
     try:
-        rr = erg.get_race_results(season=year, limit=1000)
-        for race_df in (getattr(rr, "content", None) or []):
+        for _, parts in sorted(_race_results_by_round(erg, year).items()):
+            race_df = pd.concat(parts, ignore_index=True)
             if "constructorName" in race_df.columns:
                 for cons_name, grp in race_df.groupby("constructorName"):
                     positions = [p for p in (_ef(x) for x in grp["position"]) if p is not None]

@@ -1,4 +1,4 @@
-from app.utils import _clean
+from app.utils import _clean, _is_finish
 
 
 def test_root_returns_welcome(client):
@@ -25,3 +25,11 @@ def test_clean_nested_dict():
 
 def test_clean_nested_list():
     assert _clean([float("nan"), 2.0]) == [None, 2.0]
+
+
+def test_lapped_cars_count_as_finishers():
+    assert _is_finish("Finished")
+    assert _is_finish("Lapped")
+    assert _is_finish("+1 Lap")
+    assert not _is_finish("Retired")
+    assert not _is_finish("Did not start")

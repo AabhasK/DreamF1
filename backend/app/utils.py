@@ -49,7 +49,8 @@ def _efd(v, default: float) -> float:
 
 
 def _is_finish(status: str) -> bool:
-    return status == "Finished" or status.startswith("+")
+    """Classified finisher. Lapped cars read "Lapped" from 2025 on, "+1 Lap" before that."""
+    return status in ("Finished", "Lapped") or status.startswith("+")
 
 
 def _team_slug(name: str) -> str:

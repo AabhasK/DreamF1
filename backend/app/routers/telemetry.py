@@ -7,7 +7,7 @@ import pandas as pd
 from fastapi import APIRouter, HTTPException
 
 from app.fastf1_cache import _load_session
-from app.utils import _clean, _team_slug
+from app.utils import _clean, _is_finish, _team_slug
 
 router = APIRouter()
 
@@ -259,8 +259,7 @@ def get_race_summary(year: int, round_num: int):
 
             positions_gained = (grid - finish) if (grid and finish) else None
             status = str(row.get('Status', ''))
-            # Finishers: "Finished", "+N Lap(s)" style, or "Lapped"
-            is_dnf = status not in ('Finished', 'Lapped') and not status.startswith('+')
+            is_dnf = not _is_finish(status)
 
             summary.append({
                 "abbreviation": drv,
