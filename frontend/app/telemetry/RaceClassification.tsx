@@ -1,4 +1,6 @@
 import { TEAM_COLORS } from "@/lib/design"
+import { fmtLap } from "@/lib/f1"
+import { PODIUM_COLOR } from "@/lib/format"
 
 export interface RaceResult {
   abbreviation: string
@@ -14,34 +16,19 @@ export interface RaceResult {
   fastest_lap: boolean
 }
 
-function fmtTime(s: number | null): string {
-  if (!s) return "—"
-  const m = Math.floor(s / 60)
-  const rem = (s % 60).toFixed(3).padStart(6, "0")
-  return `${m}:${rem}`
-}
-
-const PODIUM: Record<number, string> = { 1: "#FFD700", 2: "#C7CCD1", 3: "#CD7F32" }
-
-/** Grid → Finish movement chip with a proportional bar. */
+/** Grid → finish movement, with a bar sized to the swing. */
 function Movement({ delta }: { delta: number | null }) {
-  if (delta === null || delta === 0)
-    return <span className="font-(family-name:--font-dm-mono) text-[0.7rem] text-text-dim">—</span>
-
+  if (delta === null || delta === 0) return <span className="text-text-dim">—</span>
   const gained = delta > 0
-  const color = gained ? "var(--color-f1-green)" : "var(--color-f1-red)"
-  const w = Math.min(Math.abs(delta), 12) / 12 // normalise to widest realistic swing
-
+  const w = Math.min(Math.abs(delta), 12) / 12 // normalise to the widest realistic swing
   return (
-    <span className="flex items-center justify-end gap-1.5">
+    <span className="inline-flex items-center justify-end gap-2">
       <span
-        className="hidden sm:block h-[3px] rounded-full"
-        style={{ width: `${20 + w * 28}px`, background: color, opacity: 0.55 }}
+        className={`hidden h-0.5 sm:block ${gained ? "bg-f1-green" : "bg-f1-red"}`}
+        style={{ width: `${12 + w * 28}px` }}
+        aria-hidden="true"
       />
-      <span
-        className="font-(family-name:--font-dm-mono) text-[0.7rem] tabular-nums"
-        style={{ color }}
-      >
+      <span className={gained ? "text-f1-green" : "text-f1-red"}>
         {gained ? "▲" : "▼"}
         {Math.abs(delta)}
       </span>
@@ -49,44 +36,17 @@ function Movement({ delta }: { delta: number | null }) {
   )
 }
 
-function StatChip({
-  label,
-  driver,
-  value,
-  color,
-  valueColor,
-}: {
-  label: string
-  driver?: string
-  value: string
-  color: string
-  valueColor?: string
-}) {
+function Stat({ label, children }: { label: string; children: React.ReactNode }) {
   return (
-    <div
-      className="relative overflow-hidden rounded-md bg-surface-1/80 border border-border-default px-3 py-2"
-      style={{ boxShadow: `inset 2px 0 0 ${color}` }}
-    >
-      <p className="section-label leading-none mb-1.5">{label}</p>
-      <div className="flex items-baseline gap-1.5">
-        {driver && (
-          <span
-            className="font-(family-name:--font-f1-regular) text-sm font-bold tracking-wider"
-            style={{ color }}
-          >
-            {driver}
-          </span>
-        )}
-        <span
-          className="font-(family-name:--font-orbitron) text-sm font-bold tabular-nums"
-          style={{ color: valueColor ?? "var(--color-text-primary)" }}
-        >
-          {value}
-        </span>
-      </div>
+    <div className="sm:border-l sm:border-border-subtle sm:pl-6 sm:first:border-l-0 sm:first:pl-0">
+      <dt className="label">{label}</dt>
+      <dd className="timing mt-1.5 text-[1.25rem]">{children}</dd>
     </div>
   )
 }
+
+// Sticky only where the table scrolls sideways (narrow screens).
+const STICKY = "max-lg:sticky max-lg:left-0 max-lg:z-10 max-lg:bg-surface-0"
 
 export default function RaceClassification({ results }: { results: RaceResult[] }) {
   const winner = results.find((r) => r.finish_position === 1)
@@ -98,151 +58,84 @@ export default function RaceClassification({ results }: { results: RaceResult[] 
       null,
     )
   const dnfCount = results.filter((r) => r.is_dnf).length
-  const cols = "0.25rem 2.25rem 4rem 1fr 4.25rem 4.75rem 4.75rem 2rem"
+  const code = (c?: string) => <span style={{ color: c ? TEAM_COLORS[c] : undefined }}>{c ?? "—"}</span>
 
   return (
-    <div className="space-y-4">
-      {/* ── Race summary strip ───────────────────────────────── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-        <StatChip
-          label="Winner"
-          driver={winner?.abbreviation}
-          value={winner ? `${winner.points} PTS` : "—"}
-          color={winner ? TEAM_COLORS[winner.abbreviation] ?? "#fff" : "#444"}
-        />
-        <StatChip
-          label="Fastest Lap"
-          driver={flHolder?.abbreviation}
-          value={flHolder ? fmtTime(flHolder.best_lap_time) : "—"}
-          color="var(--color-f1-purple)"
-          valueColor="var(--color-f1-purple)"
-        />
-        <StatChip
-          label="Biggest Mover"
-          driver={mover && (mover.positions_gained ?? 0) > 0 ? mover.abbreviation : undefined}
-          value={mover && (mover.positions_gained ?? 0) > 0 ? `▲${mover.positions_gained}` : "—"}
-          color="var(--color-f1-green)"
-          valueColor="var(--color-f1-green)"
-        />
-        <StatChip
-          label="Retirements"
-          value={`${dnfCount} DNF`}
-          color="var(--color-f1-red)"
-          valueColor={dnfCount > 0 ? "var(--color-f1-red)" : undefined}
-        />
-      </div>
+    <div className="space-y-10">
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-6 sm:grid-cols-4">
+        <Stat label="Winner">
+          {code(winner?.abbreviation)} {winner && <span className="text-[0.75em] text-text-muted">{winner.points} PTS</span>}
+        </Stat>
+        <Stat label="Fastest lap">
+          {code(flHolder?.abbreviation)}{" "}
+          {flHolder && <span className="text-[0.75em] text-f1-purple">{fmtLap(flHolder.best_lap_time)}</span>}
+        </Stat>
+        <Stat label="Biggest mover">
+          {mover && (mover.positions_gained ?? 0) > 0 ? (
+            <>
+              {code(mover.abbreviation)} <span className="text-[0.75em] text-f1-green">▲{mover.positions_gained}</span>
+            </>
+          ) : (
+            "—"
+          )}
+        </Stat>
+        <Stat label="Retirements">
+          <span className={dnfCount > 0 ? "text-f1-red" : ""}>{dnfCount}</span>
+        </Stat>
+      </dl>
 
-      {/* ── Timing tower ─────────────────────────────────────── */}
       <div className="overflow-x-auto">
-        <div className="glass-card overflow-hidden min-w-140">
-          {/* Header row */}
-          <div
-            className="grid text-[0.6rem] font-(family-name:--font-dm-mono) uppercase tracking-widest
-                       text-text-muted px-3 py-2.5 border-b border-border-default bg-surface-1/40"
-            style={{ gridTemplateColumns: cols }}
-          >
-            <span />
-            <span>POS</span>
-            <span>DRIVER</span>
-            <span>STATUS</span>
-            <span className="text-right">GRID→FIN</span>
-            <span className="text-right">BEST LAP</span>
-            <span className="text-right">AVG LAP</span>
-            <span className="text-right">PTS</span>
-          </div>
-
-          {results.map((r) => {
-            const teamColor = TEAM_COLORS[r.abbreviation] ?? "#333"
-            const podium = r.finish_position ? PODIUM[r.finish_position] : undefined
-            return (
-              <div
-                key={r.abbreviation}
-                className={`group grid items-center px-3 py-2 border-b border-border-subtle last:border-0
-                           transition-colors hover:bg-surface-2/60 ${r.is_dnf ? "opacity-55" : ""}`}
-                style={{
-                  gridTemplateColumns: cols,
-                  background: `linear-gradient(90deg, ${teamColor}1f 0%, transparent 42%)`,
-                }}
-              >
-                {/* Team stripe */}
-                <span
-                  className="h-7 w-[3px] rounded-full transition-all group-hover:h-8"
-                  style={{ background: teamColor, boxShadow: `0 0 8px ${teamColor}99` }}
-                />
-
-                {/* Pos — podium gets a filled medallion */}
-                <span className="flex justify-center">
-                  {podium ? (
-                    <span
-                      className="flex h-6 w-6 items-center justify-center rounded-full
-                                 font-(family-name:--font-orbitron) text-xs font-bold text-surface-0"
-                      style={{ background: podium, boxShadow: `0 0 10px ${podium}66` }}
-                    >
-                      {r.finish_position}
+        <table className="w-full min-w-152 border-collapse">
+          <thead className="border-b border-border-default">
+            <tr>
+              <th scope="col" className={`label h-10 text-left font-medium ${STICKY}`}>Driver</th>
+              <th scope="col" className="label h-10 px-2 text-left font-medium">Status</th>
+              <th scope="col" className="label h-10 px-2 text-right font-medium" title="Places gained or lost from the grid">Grid → finish</th>
+              <th scope="col" className="label h-10 px-2 text-right font-medium">Best lap</th>
+              <th scope="col" className="label h-10 px-2 text-right font-medium">Avg lap</th>
+              <th scope="col" className="label h-10 pl-2 text-right font-medium">Pts</th>
+            </tr>
+          </thead>
+          <tbody>
+            {results.map((r) => {
+              const team = TEAM_COLORS[r.abbreviation] ?? "#888888"
+              return (
+                <tr key={r.abbreviation} className={`h-12 border-b border-border-subtle ${r.is_dnf ? "opacity-55" : ""}`}>
+                  <th scope="row" className={`pr-4 text-left font-normal ${STICKY}`}>
+                    <span className="flex items-center gap-3">
+                      <span
+                        className="timing w-6 text-right text-[1rem]"
+                        style={{ color: r.finish_position ? PODIUM_COLOR[r.finish_position] : undefined }}
+                      >
+                        {r.finish_position ?? "—"}
+                      </span>
+                      <span className="h-6 w-0.75" style={{ background: team }} aria-hidden="true" />
+                      <span className="timing text-[1rem]">{r.abbreviation}</span>
+                      {r.fastest_lap && (
+                        <span className="timing text-[0.625rem] text-f1-purple" title="Fastest lap">
+                          FL
+                        </span>
+                      )}
                     </span>
-                  ) : (
-                    <span className="font-(family-name:--font-orbitron) text-sm font-bold text-text-secondary tabular-nums">
-                      {r.finish_position ?? "—"}
-                    </span>
-                  )}
-                </span>
-
-                {/* Driver code */}
-                <span
-                  className="font-(family-name:--font-f1-regular) text-sm font-bold tracking-wider"
-                  style={{ color: teamColor }}
-                >
-                  {r.abbreviation}
-                  {r.fastest_lap && (
-                    <span className="ml-1 align-super text-[0.5rem] font-bold text-f1-purple">FL</span>
-                  )}
-                </span>
-
-                {/* Status */}
-                <span
-                  className={`text-[0.7rem] font-(family-name:--font-dm-mono) ${
-                    r.is_dnf ? "text-f1-red" : "text-text-muted"
-                  }`}
-                >
-                  {r.is_dnf ? `DNF · L${r.total_laps}` : r.status}
-                </span>
-
-                {/* Grid → Finish movement */}
-                <span className="text-right">
-                  <Movement delta={r.positions_gained} />
-                </span>
-
-                {/* Best lap */}
-                <span
-                  className={`text-right text-xs font-(family-name:--font-dm-mono) tabular-nums ${
-                    r.fastest_lap ? "text-f1-purple font-semibold" : "text-text-secondary"
-                  }`}
-                >
-                  {fmtTime(r.best_lap_time)}
-                </span>
-
-                {/* Avg lap */}
-                <span className="text-right text-xs font-(family-name:--font-dm-mono) tabular-nums text-text-muted">
-                  {fmtTime(r.avg_lap_time)}
-                </span>
-
-                {/* Points */}
-                <span className="flex justify-end">
-                  {r.points > 0 ? (
-                    <span
-                      className="min-w-7 rounded bg-surface-3 px-1.5 py-0.5 text-center
-                                 font-(family-name:--font-orbitron) text-xs font-bold text-text-primary tabular-nums"
-                    >
-                      {r.points}
-                    </span>
-                  ) : (
-                    <span className="text-text-dim text-xs">—</span>
-                  )}
-                </span>
-              </div>
-            )
-          })}
-        </div>
+                  </th>
+                  <td className={`px-2 text-[0.875rem] ${r.is_dnf ? "text-f1-red" : "text-text-secondary"}`}>
+                    {r.is_dnf ? `Retired, lap ${r.total_laps}` : r.status}
+                  </td>
+                  <td className="timing px-2 text-right text-[0.875rem]">
+                    <Movement delta={r.positions_gained} />
+                  </td>
+                  <td className={`timing px-2 text-right text-[0.875rem] ${r.fastest_lap ? "text-f1-purple" : "text-text-secondary"}`}>
+                    {fmtLap(r.best_lap_time)}
+                  </td>
+                  <td className="timing px-2 text-right text-[0.875rem] text-text-muted">{fmtLap(r.avg_lap_time)}</td>
+                  <td className="timing pl-2 text-right text-[0.9375rem]">
+                    {r.points > 0 ? r.points : <span className="text-text-dim">—</span>}
+                  </td>
+                </tr>
+              )
+            })}
+          </tbody>
+        </table>
       </div>
     </div>
   )

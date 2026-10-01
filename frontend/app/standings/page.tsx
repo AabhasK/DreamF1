@@ -1,10 +1,11 @@
-import NavHeader from "@/components/NavHeader"
+import type { Metadata } from "next"
 import StandingsClient from "./StandingsClient"
+
+export const metadata: Metadata = { title: "Standings" }
 
 export default function StandingsPage() {
   return (
-    <div className="min-h-screen px-4 sm:px-6 py-6 sm:py-8 max-w-7xl mx-auto space-y-6 sm:space-y-8">
-      <NavHeader active="standings" />
+    <div className="shell pt-8 sm:pt-10">
       <StandingsClient />
     </div>
   )

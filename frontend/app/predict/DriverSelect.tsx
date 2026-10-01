@@ -1,129 +1,74 @@
 "use client"
 
-import { useEffect, useRef, useState } from "react"
-import { TEAM_COLORS } from "@/lib/design"
+import DriverPortrait from "@/components/DriverPortrait"
+import { DRIVER_NAMES, TEAM_COLORS } from "@/lib/design"
 
-const TEAM_GROUPS = [
-  { team: "Red Bull",     drivers: ["VER", "HAD"] },
-  { team: "McLaren",      drivers: ["NOR", "PIA"] },
-  { team: "Ferrari",      drivers: ["LEC", "HAM"] },
-  { team: "Mercedes",     drivers: ["RUS", "ANT"] },
-  { team: "Aston Martin", drivers: ["ALO", "STR"] },
-  { team: "Alpine",       drivers: ["GAS", "COL"] },
-  { team: "Williams",     drivers: ["ALB", "SAI"] },
-  { team: "Racing Bulls", drivers: ["LAW", "LIN"] },
-  { team: "Audi",         drivers: ["HUL", "BOR"] },
-  { team: "Haas",         drivers: ["BEA", "OCO"] },
-  { team: "Cadillac",     drivers: ["BOT", "PER"] },
-]
-
-interface Props {
-  value: string | null
-  onChange: (v: string | null) => void
-  placeholder?: string
-  optional?: boolean
-  disabledCodes?: Set<string>
-}
-
+/**
+ * One prediction slot drawn as a painted grid box. Solid paint for required
+ * picks, dashed for bonus picks. Without `onOpen` it renders read-only.
+ */
 export default function DriverSelect({
+  label,
+  points,
   value,
-  onChange,
-  placeholder = "Driver",
   optional = false,
-  disabledCodes,
-}: Props) {
-  const [open, setOpen] = useState(false)
-  const ref = useRef<HTMLDivElement>(null)
+  onOpen,
+  result,
+}: {
+  label: string
+  points: number
+  value: string | null
+  optional?: boolean
+  onOpen?: () => void
+  /** After scoring: whether this pick earned its points. */
+  result?: boolean
+}) {
+  const color = value ? (TEAM_COLORS[value] ?? "#888888") : undefined
+  const content = (
+    <>
+      <span className="flex items-baseline justify-between gap-2 pl-3.5 pt-2.5">
+        <span className="timing text-[1.35rem] leading-none sm:text-[1.6rem]">{label}</span>
+        <span className={`timing text-[0.75rem] ${result ? "text-f1-green" : "text-text-muted"}`}>
+          {result === undefined ? `+${points}` : result ? `+${points}` : "+0"}
+          {optional && result === undefined && <span className="ml-1 font-sans text-[0.75rem]">bonus</span>}
+        </span>
+      </span>
 
-  useEffect(() => {
-    const handler = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) setOpen(false)
-    }
-    document.addEventListener("mousedown", handler)
-    return () => document.removeEventListener("mousedown", handler)
-  }, [])
+      {value ? (
+        <span className="mt-2 flex items-end gap-3 pl-3.5">
+          <DriverPortrait code={value} crop="bust" glow={false} className="h-16 w-12 shrink-0 sm:h-20 sm:w-[3.75rem]" />
+          <span className="min-w-0 pb-2">
+            <span className="timing block text-[1.25rem] leading-none sm:text-[1.4rem]" style={{ color }}>
+              {value}
+            </span>
+            <span className="mt-1 block truncate text-[0.8125rem] text-text-secondary">{DRIVER_NAMES[value]?.last}</span>
+          </span>
+        </span>
+      ) : (
+        <span className="flex h-[4.5rem] items-center pl-3.5 text-[0.9375rem] text-text-muted transition-colors group-hover:text-text-primary sm:h-[5.5rem]">
+          {onOpen ? "Choose driver" : "No pick"}
+        </span>
+      )}
+    </>
+  )
 
-  const color = value ? (TEAM_COLORS[value] ?? "#444") : "#444"
+  if (!onOpen) {
+    return (
+      <div className="grid-box min-w-0" data-optional={optional}>
+        {content}
+      </div>
+    )
+  }
 
   return (
-    <div ref={ref} className="relative w-full">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="w-full flex items-center gap-3 px-3 py-2 glass-card border border-border-default
-                   hover:border-border-muted transition-colors text-left cursor-pointer"
-      >
-        <span
-          className="w-1 h-5 rounded-full shrink-0 transition-colors"
-          style={{ backgroundColor: color }}
-        />
-        {value ? (
-          <span
-            className="font-(family-name:--font-f1-regular) text-sm tracking-wider"
-            style={{ color }}
-          >
-            {value}
-          </span>
-        ) : (
-          <span className="text-text-dim text-xs font-(family-name:--font-dm-mono) uppercase tracking-widest">
-            {placeholder}
-          </span>
-        )}
-        <span className="ml-auto text-text-dim text-xs">{open ? "▲" : "▼"}</span>
-      </button>
-
-      {open && (
-        <div className="absolute z-50 top-full mt-1 w-full glass-card border border-border-muted
-                        shadow-2xl max-h-72 overflow-y-auto">
-          {optional && (
-            <button
-              type="button"
-              onClick={() => { onChange(null); setOpen(false) }}
-              className="w-full px-3 py-2 text-left text-xs font-(family-name:--font-dm-mono)
-                         text-text-dim hover:bg-border-subtle transition-colors uppercase tracking-widest"
-            >
-              — None
-            </button>
-          )}
-          {TEAM_GROUPS.map(({ team, drivers }) => (
-            <div key={team}>
-              <div className="px-3 pt-2 pb-1 text-[0.55rem] font-(family-name:--font-dm-mono)
-                              text-text-dim uppercase tracking-widest border-t border-[#111] first:border-0">
-                {team}
-              </div>
-              {drivers.map((code) => {
-                const c = TEAM_COLORS[code] ?? "#444"
-                const isDisabled = disabledCodes?.has(code) ?? false
-                return (
-                  <button
-                    key={code}
-                    type="button"
-                    disabled={isDisabled}
-                    onClick={() => { onChange(code); setOpen(false) }}
-                    className="w-full flex items-center gap-3 px-3 py-2 transition-colors cursor-pointer
-                               disabled:opacity-25 disabled:cursor-not-allowed
-                               enabled:hover:bg-border-subtle"
-                    style={{
-                      background: value === code ? `${c}15` : undefined,
-                    }}
-                  >
-                    <span className="w-1 h-4 rounded-full" style={{ backgroundColor: c }} />
-                    <span
-                      className="font-(family-name:--font-f1-regular) text-sm tracking-wider"
-                      style={{ color: c }}
-                    >
-                      {code}
-                    </span>
-                    {value === code && (
-                      <span className="ml-auto text-f1-red text-xs">✓</span>
-                    )}
-                  </button>
-                )
-              })}
-            </div>
-          ))}
-        </div>
-      )}
-    </div>
+    <button
+      type="button"
+      onClick={onOpen}
+      data-optional={optional}
+      aria-label={`${label}: ${value ? DRIVER_NAMES[value]?.last ?? value : "no driver chosen"}. Change pick`}
+      className="grid-box group block w-full min-w-0 text-left transition-colors hover:bg-surface-1"
+    >
+      {content}
+    </button>
   )
 }

@@ -40,13 +40,18 @@ export interface StandingsData {
   _error?: string
 }
 
-export async function fetchStandings(year = 2026): Promise<StandingsData | null> {
-  try {
-    const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/standings/${year}`)
-    if (!res.ok) return null
-    const data = (await res.json()) as StandingsData
-    return data._error ? null : data
-  } catch {
-    return null
+// One request per year per page load, however many sections ask for it.
+const cache = new Map<number, Promise<StandingsData | null>>()
+
+export function fetchStandings(year = 2026): Promise<StandingsData | null> {
+  if (!cache.has(year)) {
+    cache.set(
+      year,
+      fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/standings/${year}`)
+        .then((res) => (res.ok ? (res.json() as Promise<StandingsData>) : null))
+        .then((data) => (data && !data._error ? data : null))
+        .catch(() => null),
+    )
   }
+  return cache.get(year)!
 }

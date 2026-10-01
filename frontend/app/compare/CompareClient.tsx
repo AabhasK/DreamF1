@@ -1,46 +1,13 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
-import { TEAM_COLORS } from "@/lib/design"
+import { useEffect, useMemo, useRef, useState } from "react"
+import DriverPortrait from "@/components/DriverPortrait"
+import DriverPicker from "@/components/DriverPicker"
+import TrackMap, { type TrackSegment } from "@/components/TrackMap"
+import { DRIVER_NAMES, TEAM_COLORS } from "@/lib/design"
 import { parseUTC } from "@/lib/trackData"
-import DriverAvatar from "@/components/DriverAvatar"
-import type { F1Event } from "../dashboard/page"
-
-const TEAM_GROUPS: { team: string; drivers: string[] }[] = [
-  { team: "Red Bull", drivers: ["VER", "HAD"] },
-  { team: "McLaren", drivers: ["NOR", "PIA"] },
-  { team: "Ferrari", drivers: ["LEC", "HAM"] },
-  { team: "Mercedes", drivers: ["RUS", "ANT"] },
-  { team: "Aston Martin", drivers: ["ALO", "STR"] },
-  { team: "Alpine", drivers: ["GAS", "COL"] },
-  { team: "Williams", drivers: ["ALB", "SAI"] },
-  { team: "Racing Bulls", drivers: ["LAW", "LIN"] },
-  { team: "Audi", drivers: ["HUL", "BOR"] },
-  { team: "Haas", drivers: ["BEA", "OCO"] },
-  { team: "Cadillac", drivers: ["BOT", "PER"] },
-]
-
-function DriverPicker({ value, onChange, disabled }: { value: string | null; onChange: (v: string) => void; disabled?: string | null }) {
-  return (
-    <select
-      value={value ?? ""}
-      onChange={(e) => onChange(e.target.value)}
-      className="mt-1 w-full bg-surface-2 border border-border-default rounded px-3 py-2 text-sm
-                 font-(family-name:--font-f1-regular) tracking-wider text-text-secondary cursor-pointer
-                 focus:outline-none focus:border-f1-red"
-    >
-      {TEAM_GROUPS.map((g) => (
-        <optgroup key={g.team} label={g.team} className="bg-[#111]">
-          {g.drivers.map((c) => (
-            <option key={c} value={c} disabled={c === disabled} className="bg-[#111]">
-              {c}
-            </option>
-          ))}
-        </optgroup>
-      ))}
-    </select>
-  )
-}
+import { fmtLap, type F1Event } from "@/lib/f1"
+import { useWidth } from "@/lib/useWidth"
 
 interface DriverChannels {
   team_slug: string
@@ -64,15 +31,40 @@ interface CompareData {
   _error?: string
 }
 
-const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? ""
-
-function fmtLap(s: number | null): string {
-  if (s == null) return "—"
-  const m = Math.floor(s / 60)
-  return `${m}:${(s % 60).toFixed(3).padStart(6, "0")}`
+interface MapData {
+  x: number[]
+  y: number[]
 }
 
-// ── Reusable channel chart ──────────────────────────────────────────
+const API_BASE = process.env.NEXT_PUBLIC_API_URL ?? ""
+const MINI_SECTORS = 25
+
+function closestIdx(arr: number[], target: number): number {
+  let best = 0
+  for (let i = 1; i < arr.length; i++) if (Math.abs(arr[i] - target) < Math.abs(arr[best] - target)) best = i
+  return best
+}
+
+/**
+ * Who was faster where. `delta` is driver 2's time minus driver 1's along the
+ * lap, so if it grows across a mini-sector, driver 2 lost time there.
+ */
+function dominance(delta: CompareData["delta"], lapLength: number, c1: string, c2: string): TrackSegment[] {
+  if (!delta || !lapLength) return []
+  const valueAt = (dist: number) => delta.delta[closestIdx(delta.distance, dist)]
+  const out: TrackSegment[] = []
+  for (let k = 0; k < MINI_SECTORS; k++) {
+    const from = k / MINI_SECTORS
+    const to = (k + 1) / MINI_SECTORS
+    const a = valueAt(from * lapLength)
+    const b = valueAt(to * lapLength)
+    if (a == null || b == null) continue
+    out.push({ from, to, color: b > a ? c1 : c2 })
+  }
+  return out
+}
+
+// ── One channel chart; all charts share a cursor (a fraction of the lap) ──
 interface Series {
   dist: number[]
   vals: (number | null)[]
@@ -81,7 +73,17 @@ interface Series {
 }
 
 function Chart({
-  label, series, height = 110, yMin, yMax, baseline, fmtY, dMax,
+  label,
+  series,
+  height = 110,
+  yMin,
+  yMax,
+  baseline,
+  fmtY,
+  ticks,
+  dMax,
+  cursor,
+  onCursor,
 }: {
   label: string
   series: Series[]
@@ -90,15 +92,19 @@ function Chart({
   yMax?: number
   baseline?: number
   fmtY?: (v: number) => string
+  ticks?: number[]
   dMax: number
+  cursor: number | null
+  onCursor: (f: number | null) => void
 }) {
-  const W = 1000
-  const PAD = { l: 46, r: 12, t: 10, b: 6 }
+  const svgRef = useRef<SVGSVGElement>(null)
+  const [chartRef, W] = useWidth()
+  const PAD = { l: 52, r: 12, t: 10, b: 6 }
   const allV = series.flatMap((s) => s.vals).filter((v): v is number => v != null)
   const lo = yMin ?? (allV.length ? Math.min(...allV) : 0)
   const hi = yMax ?? (allV.length ? Math.max(...allV) : 1)
   const x = (d: number) => PAD.l + (d / (dMax || 1)) * (W - PAD.l - PAD.r)
-  const y = (v: number) => height - PAD.b - ((v - lo) / ((hi - lo) || 1)) * (height - PAD.t - PAD.b)
+  const y = (v: number) => height - PAD.b - ((v - lo) / (hi - lo || 1)) * (height - PAD.t - PAD.b)
   const fy = fmtY ?? ((v: number) => `${Math.round(v)}`)
 
   const path = (s: Series) => {
@@ -106,88 +112,138 @@ function Chart({
     let started = false
     for (let i = 0; i < s.vals.length; i++) {
       const v = s.vals[i]
-      if (v == null) { started = false; continue }
+      if (v == null) {
+        started = false
+        continue
+      }
       d += `${started ? "L" : "M"}${x(s.dist[i]).toFixed(1)},${y(v).toFixed(1)} `
       started = true
     }
     return d.trim()
   }
 
-  const ticks = [lo, (lo + hi) / 2, hi]
+  function handleMove(e: React.PointerEvent<SVGSVGElement>) {
+    const rect = svgRef.current?.getBoundingClientRect()
+    if (!rect) return
+    const vx = ((e.clientX - rect.left) / rect.width) * W
+    onCursor(vx < PAD.l || vx > W - PAD.r ? null : (vx - PAD.l) / (W - PAD.l - PAD.r))
+  }
+
+  const cx = cursor == null ? null : PAD.l + cursor * (W - PAD.l - PAD.r)
 
   return (
-    <div>
-      <p className="text-[0.55rem] font-(family-name:--font-dm-mono) uppercase tracking-widest text-text-muted mb-1">{label}</p>
-      <svg viewBox={`0 0 ${W} ${height}`} className="w-full" style={{ height: "auto" }}>
-        {ticks.map((v, i) => (
+    <div ref={chartRef}>
+      <p className="mb-1 text-[0.8125rem] font-semibold text-text-secondary">{label}</p>
+      <svg
+        ref={svgRef}
+        viewBox={`0 0 ${W} ${height}`}
+        className="timing w-full cursor-crosshair touch-pan-y select-none"
+        style={{ height: "auto" }}
+        onPointerMove={handleMove}
+        onPointerLeave={() => onCursor(null)}
+      >
+        {(ticks ?? [lo, (lo + hi) / 2, hi]).map((v, i) => (
           <g key={i}>
-            <line x1={PAD.l} y1={y(v)} x2={W - PAD.r} y2={y(v)} stroke="#1a1a1a" strokeWidth={1} />
-            <text x={PAD.l - 5} y={y(v) + 3} textAnchor="end" fontSize={11} fill="#555" fontFamily="var(--font-dm-mono)">{fy(v)}</text>
+            <line x1={PAD.l} y1={y(v)} x2={W - PAD.r} y2={y(v)} className="stroke-border-subtle" strokeWidth={1} />
+            <text x={PAD.l - 6} y={y(v) + 4} textAnchor="end" fontSize={12} className="fill-text-muted">
+              {fy(v)}
+            </text>
           </g>
         ))}
         {baseline != null && (
-          <line x1={PAD.l} y1={y(baseline)} x2={W - PAD.r} y2={y(baseline)} stroke="#ED1131" strokeWidth={1} opacity={0.4} strokeDasharray="5 3" />
+          <line x1={PAD.l} y1={y(baseline)} x2={W - PAD.r} y2={y(baseline)} className="stroke-text-muted" strokeWidth={1} strokeDasharray="5 3" />
         )}
         {series.map((s, i) => (
           <path key={i} d={path(s)} fill="none" stroke={s.color} strokeWidth={1.9} strokeDasharray={s.dash || undefined} strokeLinejoin="round" strokeLinecap="round" />
         ))}
+        {cx != null && <line x1={cx} y1={0} x2={cx} y2={height} className="stroke-text-primary" strokeWidth={1} opacity={0.5} />}
       </svg>
     </div>
   )
 }
 
-// ── Page ────────────────────────────────────────────────────────────
-export default function CompareClient({ events, backendDown }: { events: F1Event[]; backendDown: boolean }) {
-  const now = new Date()
-  const pastEvents = useMemo(
-    () =>
-      events.filter((e) => {
-        const raceStart = parseUTC(e.session5_date) ?? new Date(e.event_date + "T23:59:59Z")
-        return raceStart <= now
-      }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [events]
+function Side({ code, ch, color, mirror }: { code: string; ch: DriverChannels; color: string; mirror?: boolean }) {
+  return (
+    <div
+      className={`flex flex-col gap-3 sm:flex-row sm:items-end sm:gap-4 ${
+        mirror ? "items-end text-right sm:flex-row-reverse" : "items-start"
+      }`}
+    >
+      <DriverPortrait code={code} slug={ch.team_slug} crop="bust" mirror={mirror} className="h-24 w-20 shrink-0 sm:h-36 sm:w-28" />
+      <div className="min-w-0 sm:pb-2">
+        <p className="timing text-[2rem] leading-none" style={{ color }}>
+          {code}
+        </p>
+        <p className="mt-1 truncate text-[0.875rem] text-text-secondary">{DRIVER_NAMES[code]?.last ?? code}</p>
+        <p className="timing mt-3 text-[1.25rem] leading-none">{fmtLap(ch.lap_time)}</p>
+        <p className="mt-1 text-[0.75rem] text-text-muted">{ch.compound ? `${ch.compound.toLowerCase()} tyre` : "—"}</p>
+      </div>
+    </div>
   )
+}
 
-  const last = pastEvents[pastEvents.length - 1]
-  const [roundNum, setRoundNum] = useState<number>(last?.round_number ?? 0)
-  const [d1, setD1] = useState<string | null>("VER")
-  const [d2, setD2] = useState<string | null>("NOR")
-  const [data, setData] = useState<CompareData | false | null>(null)
-  const [loading, setLoading] = useState(false)
+export default function CompareClient({ events, backendDown }: { events: F1Event[]; backendDown: boolean }) {
+  const pastEvents = useMemo(() => {
+    const now = new Date()
+    return events.filter((e) => (parseUTC(e.session5_date) ?? new Date(e.event_date + "T23:59:59Z")) <= now)
+  }, [events])
+
+  const [roundNum, setRoundNum] = useState<number>(pastEvents.at(-1)?.round_number ?? 0)
+  const [d1, setD1] = useState("VER")
+  const [d2, setD2] = useState("NOR")
+  const [picking, setPicking] = useState<1 | 2 | null>(null)
+  const [cursor, setCursor] = useState<number | null>(null)
+
+  // Each response is stored with the request it answers, so a stale one never
+  // shows for a new pairing and "loading" is simply "no answer for this key yet".
+  const pairKey = `${roundNum}/${d1}/${d2}`
+  const [pair, setPair] = useState<{ key: string; data: CompareData | false } | null>(null)
+  const [track, setTrack] = useState<{ round: number; map: MapData | null } | null>(null)
 
   useEffect(() => {
-    if (!roundNum || !d1 || !d2 || d1 === d2) return
-    setLoading(true)
-    setData(null)
+    if (!roundNum) return
     fetch(`${API_BASE}/api/telemetry/2026/${roundNum}/compare/${d1}/${d2}`)
       .then((r) => (r.ok ? r.json() : null))
       .catch(() => null)
-      .then((d: CompareData | null) => setData(d && !d._error ? d : false))
-      .finally(() => setLoading(false))
-  }, [roundNum, d1, d2])
+      .then((d: CompareData | null) => setPair({ key: pairKey, data: d && !d._error ? d : false }))
+  }, [pairKey, roundNum, d1, d2])
+
+  useEffect(() => {
+    if (!roundNum) return
+    fetch(`${API_BASE}/api/telemetry/2026/${roundNum}/map`)
+      .then((r) => (r.ok ? r.json() : null))
+      .catch(() => null)
+      .then((m) => setTrack({ round: roundNum, map: m && !m._error && m.x?.length > 1 ? m : null }))
+  }, [roundNum])
+
+  const data = pair?.key === pairKey ? pair.data : null // null while loading
+  const map = track?.round === roundNum ? track.map : null
 
   if (backendDown || pastEvents.length === 0) {
     return (
-      <div className="glass-card p-8 space-y-2">
-        <p className="section-label text-f1-red">{backendDown ? "Backend unavailable" : "No past races"}</p>
-        <p className="text-text-muted text-sm font-(family-name:--font-dm-mono)">
-          {backendDown ? "Start the FastAPI server on port 8080." : "No completed 2026 races to compare yet."}
+      <>
+        <h1 className="display text-[clamp(2rem,4.5vw,3.25rem)]">Head to head</h1>
+        <p className="lede mt-2">
+          {backendDown ? "The backend isn't responding. Start it on port 8080 and reload." : "No 2026 race has been run yet."}
         </p>
-      </div>
+      </>
     )
   }
 
-  const c1 = d1 ? TEAM_COLORS[d1] ?? "#888" : "#888"
-  let c2 = d2 ? TEAM_COLORS[d2] ?? "#bbb" : "#bbb"
-  const sameColor = c1 === c2
-  if (sameColor) c2 = "#cfcfcf" // keep teammates distinct
-  const dash2 = sameColor ? "7 5" : undefined
+  const c1 = TEAM_COLORS[d1] ?? "#888888"
+  let c2 = TEAM_COLORS[d2] ?? "#BBBBBB"
+  const teammates = c1 === c2
+  if (teammates) c2 = "#CFCFCF" // keep teammates apart
+  const dash2 = teammates ? "7 5" : undefined
 
-  const dr1 = data && d1 ? data.drivers[d1] : undefined
-  const dr2 = data && d2 ? data.drivers[d2] : undefined
-  const dMax = data && dr1 && dr2 ? Math.max(...dr1.distance, ...dr2.distance) : 1
+  const dr1 = data ? data.drivers[d1] : undefined
+  const dr2 = data ? data.drivers[d2] : undefined
+  const dMax = dr1 && dr2 ? Math.max(...dr1.distance, ...dr2.distance) : 1
   const lapGap = dr1?.lap_time != null && dr2?.lap_time != null ? dr2.lap_time - dr1.lap_time : null
+  const segments = data && dr1 && dr2 ? dominance(data.delta, dMax, c1, c2) : []
+  const d1Sectors = segments.filter((s) => s.color === c1).length
+  // 2026 cars have active aero instead of DRS, so the channel is flat unless a lap used it
+  const usedDrs = !!(dr1?.drs.some(Boolean) || dr2?.drs.some(Boolean))
 
   const ch = (sel: (d: DriverChannels) => (number | null)[]): Series[] =>
     dr1 && dr2
@@ -197,102 +253,170 @@ export default function CompareClient({ events, backendDown }: { events: F1Event
         ]
       : []
 
+  // Values for both drivers at the cursor
+  const readout =
+    cursor != null && dr1 && dr2
+      ? [d1, d2].map((code, i) => {
+          const c = i === 0 ? dr1 : dr2
+          const k = closestIdx(c.distance, cursor * dMax)
+          return { code, color: i === 0 ? c1 : c2, speed: c.speed[k], gear: c.gear[k], throttle: c.throttle[k], brake: c.brake[k] }
+        })
+      : null
+
+  const chartProps = { dMax, cursor, onCursor: setCursor }
+
   return (
-    <div className="space-y-5">
-      {/* Header */}
-      <div>
-        <p className="section-label">Head to Head</p>
-        <h1 className="font-(family-name:--font-orbitron) text-2xl font-bold text-text-primary">Driver Comparison</h1>
-        <p className="text-text-muted text-xs font-(family-name:--font-dm-mono) mt-1">Fastest-lap telemetry · {data && data.session ? data.session : "—"}</p>
+    <>
+      <div className="flex flex-wrap items-end justify-between gap-x-10 gap-y-6">
+        <div>
+          <h1 className="display text-[clamp(2rem,4.5vw,3.25rem)]">Head to head</h1>
+          <p className="lede mt-2">Two drivers&apos; fastest laps, compared metre by metre.</p>
+        </div>
+        <div className="flex flex-wrap items-end gap-3">
+          <label className="block">
+            <span className="label">Race</span>
+            <select
+              value={roundNum}
+              onChange={(e) => setRoundNum(Number(e.target.value))}
+              className="field mt-1.5 min-h-11 w-64 cursor-pointer text-[0.9375rem]"
+            >
+              {pastEvents.map((e) => (
+                <option key={e.round_number} value={e.round_number}>
+                  R{e.round_number} {e.event_name}
+                </option>
+              ))}
+            </select>
+          </label>
+          <button onClick={() => setPicking(1)} className="btn btn-ghost min-h-11">
+            <span className="h-4 w-0.75" style={{ background: c1 }} aria-hidden="true" />
+            <span className="timing">{d1}</span>
+            <span className="sr-only">Change driver one</span>
+          </button>
+          <span className="pb-3 text-[0.875rem] text-text-muted">vs</span>
+          <button onClick={() => setPicking(2)} className="btn btn-ghost min-h-11">
+            <span className="h-4 w-0.75" style={{ background: c2 }} aria-hidden="true" />
+            <span className="timing">{d2}</span>
+            <span className="sr-only">Change driver two</span>
+          </button>
+        </div>
       </div>
 
-      {/* Controls */}
-      <div className="glass-card p-4 grid grid-cols-1 sm:grid-cols-3 gap-3">
-        <div>
-          <label className="text-[0.55rem] font-(family-name:--font-dm-mono) uppercase tracking-widest text-text-dim">Race</label>
-          <select
-            value={roundNum}
-            onChange={(e) => setRoundNum(Number(e.target.value))}
-            className="mt-1 w-full bg-surface-2 border border-border-default rounded px-3 py-2 text-xs font-(family-name:--font-dm-mono) text-text-secondary cursor-pointer focus:outline-none focus:border-f1-red"
-          >
-            {pastEvents.map((e) => (
-              <option key={e.round_number} value={e.round_number} className="bg-[#111]">
-                R{e.round_number} · {e.event_name}
-              </option>
-            ))}
-          </select>
+      {data === null ? (
+        <div className="mt-10 animate-pulse space-y-2" aria-busy="true">
+          <div className="h-40 bg-surface-1" />
+          {Array.from({ length: 5 }, (_, i) => (
+            <div key={i} className="h-24 bg-surface-1" />
+          ))}
         </div>
-        <div>
-          <label className="text-[0.55rem] font-(family-name:--font-dm-mono) uppercase tracking-widest text-text-dim">Driver 1</label>
-          <DriverPicker value={d1} onChange={setD1} disabled={d2} />
-        </div>
-        <div>
-          <label className="text-[0.55rem] font-(family-name:--font-dm-mono) uppercase tracking-widest text-text-dim">Driver 2</label>
-          <DriverPicker value={d2} onChange={setD2} disabled={d1} />
-        </div>
-      </div>
-
-      {!d1 || !d2 || d1 === d2 ? (
-        <div className="glass-card p-8 text-center"><p className="text-text-muted text-sm font-(family-name:--font-dm-mono)">Pick two different drivers.</p></div>
-      ) : loading ? (
-        <div className="glass-card p-8 space-y-3 animate-pulse">{[...Array(6)].map((_, i) => <div key={i} className="h-10 bg-border-subtle rounded" />)}</div>
       ) : !data || !dr1 || !dr2 ? (
-        <div className="glass-card p-8 text-center">
-          <p className="section-label text-f1-red mb-1">No telemetry</p>
-          <p className="text-text-muted text-sm font-(family-name:--font-dm-mono)">One of these drivers has no fastest-lap telemetry for this race. Try another pairing or round.</p>
-        </div>
+        <p className="mt-10 border-t border-border-subtle pt-8 text-text-secondary">
+          One of these drivers has no fastest-lap telemetry for this race. Try another pairing or round.
+        </p>
       ) : (
         <>
-          {/* Summary */}
-          <div className="glass-card p-4 flex items-center justify-between gap-4 flex-wrap">
-            <DriverSummary code={d1} color={c1} ch={dr1} />
-            <div className="text-center">
-              <p className="text-[0.5rem] font-(family-name:--font-dm-mono) uppercase tracking-widest text-text-dim">Lap Gap</p>
-              <p className="font-(family-name:--font-orbitron) text-xl font-bold tabular-nums" style={{ color: lapGap != null && lapGap > 0 ? c1 : c2 }}>
-                {lapGap == null ? "—" : `${lapGap > 0 ? "+" : ""}${lapGap.toFixed(3)}s`}
+          {/* The match-up */}
+          <div className="mt-10 grid grid-cols-2 items-end gap-x-4 gap-y-5 border-y border-border-subtle py-6 sm:grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)]">
+            <Side code={d1} ch={dr1} color={c1} />
+            <div className="order-last col-span-2 border-t border-border-subtle pt-4 text-center sm:order-none sm:col-span-1 sm:border-t-0 sm:pt-0 sm:pb-2">
+              <p className="label">Lap gap</p>
+              <p className="timing mt-1 text-[clamp(1.5rem,4vw,2.5rem)] leading-none">
+                {lapGap == null ? "—" : `${Math.abs(lapGap).toFixed(3)}S`}
               </p>
+              {lapGap != null && lapGap !== 0 && (
+                <p className="mt-1.5 text-[0.8125rem] text-text-secondary">{lapGap > 0 ? d1 : d2} quicker</p>
+              )}
             </div>
-            <DriverSummary code={d2} color={c2} ch={dr2} alignRight />
+            <Side code={d2} ch={dr2} color={c2} mirror />
           </div>
 
-          {/* Charts */}
-          <div className="glass-card p-4 space-y-4">
-            <div className="flex items-center gap-5 text-[0.6rem] font-(family-name:--font-dm-mono) uppercase tracking-widest">
-              <span className="flex items-center gap-1.5"><span className="w-4" style={{ borderTop: `2px solid ${c1}` }} /> {d1}</span>
-              <span className="flex items-center gap-1.5"><span className="w-4" style={{ borderTop: `2px ${dash2 ? "dashed" : "solid"} ${c2}` }} /> {d2}</span>
-              <span className="ml-auto normal-case tracking-normal text-text-dim">x-axis: lap distance (m)</span>
+          <div className="mt-8 grid gap-x-12 gap-y-10 lg:grid-cols-[minmax(0,1fr)_22rem]">
+            <div className="min-w-0 space-y-6">
+              <Chart label="Speed, km/h" series={ch((d) => d.speed)} height={170} {...chartProps} />
+              {data.delta && (
+                <Chart
+                  label={`Gap to ${d1} in seconds (above zero: ${d2} behind)`}
+                  series={[{ dist: data.delta.distance, vals: data.delta.delta, color: c2, dash: dash2 }]}
+                  height={110}
+                  baseline={0}
+                  fmtY={(v) => v.toFixed(2)}
+                  {...chartProps}
+                />
+              )}
+              <Chart label="Throttle, %" series={ch((d) => d.throttle)} height={86} yMin={0} yMax={100} {...chartProps} />
+              <Chart label="Brake" series={ch((d) => d.brake)} height={56} yMin={0} yMax={1} ticks={[0, 1]} fmtY={(v) => (v ? "ON" : "OFF")} {...chartProps} />
+              <Chart label="Gear" series={ch((d) => d.gear)} height={86} yMin={0.5} yMax={8.5} {...chartProps} />
+              {usedDrs && (
+                <Chart label="DRS" series={ch((d) => d.drs)} height={56} yMin={0} yMax={1} ticks={[0, 1]} fmtY={(v) => (v ? "OPEN" : "SHUT")} {...chartProps} />
+              )}
             </div>
-            <Chart label="Speed (km/h)" series={ch((d) => d.speed)} height={170} dMax={dMax} />
-            {data.delta && (
-              <Chart
-                label={`Delta to ${d1} (s) — above zero = ${d2} slower`}
-                series={[{ dist: data.delta.distance, vals: data.delta.delta, color: c2, dash: dash2 }]}
-                height={120}
-                baseline={0}
-                fmtY={(v) => v.toFixed(2)}
-                dMax={dMax}
-              />
-            )}
-            <Chart label="Throttle (%)" series={ch((d) => d.throttle)} height={90} yMin={0} yMax={100} dMax={dMax} />
-            <Chart label="Brake" series={ch((d) => d.brake)} height={56} yMin={0} yMax={1} fmtY={(v) => (v >= 0.5 ? "ON" : "OFF")} dMax={dMax} />
-            <Chart label="Gear" series={ch((d) => d.gear)} height={90} yMin={0.5} yMax={8.5} dMax={dMax} />
-            <Chart label="DRS" series={ch((d) => d.drs)} height={56} yMin={0} yMax={1} fmtY={(v) => (v >= 0.5 ? "OPEN" : "—")} dMax={dMax} />
+
+            <aside className="lg:sticky lg:top-[calc(var(--nav-h)+1.5rem)] lg:self-start">
+              <h2 className="heading text-[1.25rem]">Who was faster where</h2>
+              <p className="mt-1 text-[0.8125rem] text-text-muted">
+                The lap split into {MINI_SECTORS} mini-sectors, each coloured by the driver who gained time there.
+              </p>
+              {map ? (
+                <TrackMap
+                  x={map.x}
+                  y={map.y}
+                  cursor={cursor}
+                  onCursor={setCursor}
+                  segments={segments}
+                  label={`Track dominance, ${d1} against ${d2}`}
+                  className="mt-4"
+                />
+              ) : (
+                <div className="mt-4 aspect-square bg-surface-1" />
+              )}
+              <div className="mt-4 flex items-center justify-between text-[0.875rem]">
+                <span className="flex items-center gap-2">
+                  <span className="h-1 w-5" style={{ background: c1 }} />
+                  <span className="timing">{d1}</span> <span className="timing text-text-secondary">{d1Sectors}</span>
+                </span>
+                <span className="flex items-center gap-2">
+                  <span className="timing text-text-secondary">{segments.length - d1Sectors}</span> <span className="timing">{d2}</span>
+                  <span className="h-1 w-5" style={{ background: c2 }} />
+                </span>
+              </div>
+
+              <dl className="mt-6 min-h-24 border-t border-border-subtle pt-4">
+                {readout ? (
+                  <>
+                    <dt className="label">At {Math.round(cursor! * dMax)} m</dt>
+                    {readout.map((r) => (
+                      <dd key={r.code} className="timing mt-2 grid grid-cols-[3rem_1fr_1fr_1fr] gap-2 text-[0.8125rem]">
+                        <span style={{ color: r.color }}>{r.code}</span>
+                        <span>{Math.round(r.speed)} KM/H</span>
+                        <span className="text-text-secondary">GEAR {r.gear ?? "—"}</span>
+                        <span className={r.brake >= 0.5 ? "text-f1-red" : "text-text-secondary"}>
+                          {r.brake >= 0.5 ? "BRAKE" : `${Math.round(r.throttle)}%`}
+                        </span>
+                      </dd>
+                    ))}
+                  </>
+                ) : (
+                  <dt className="text-[0.8125rem] text-text-muted">Move along any chart or the map to read both cars at that point.</dt>
+                )}
+              </dl>
+            </aside>
           </div>
         </>
       )}
-    </div>
-  )
-}
 
-function DriverSummary({ code, color, ch, alignRight }: { code: string; color: string; ch: DriverChannels; alignRight?: boolean }) {
-  return (
-    <div className={`flex items-center gap-3 ${alignRight ? "flex-row-reverse text-right" : ""}`}>
-      <DriverAvatar code={code} slug={ch.team_slug} size={40} />
-      <div>
-        <p className="font-(family-name:--font-f1-regular) text-lg tracking-wider" style={{ color }}>{code}</p>
-        <p className="font-(family-name:--font-orbitron) text-sm font-bold text-text-primary tabular-nums">{fmtLap(ch.lap_time)}</p>
-        <p className="text-[0.55rem] font-(family-name:--font-dm-mono) text-text-dim uppercase">{ch.compound ?? "—"}</p>
-      </div>
-    </div>
+      {picking && (
+        <DriverPicker
+          open
+          title={picking === 1 ? "First driver" : "Second driver"}
+          value={picking === 1 ? d1 : d2}
+          taken={new Map([[picking === 1 ? d2 : d1, picking === 1 ? "D2" : "D1"]])}
+          onPick={(code) => {
+            if (picking === 1) setD1(code)
+            else setD2(code)
+            setPicking(null)
+          }}
+          onClose={() => setPicking(null)}
+        />
+      )}
+    </>
   )
 }

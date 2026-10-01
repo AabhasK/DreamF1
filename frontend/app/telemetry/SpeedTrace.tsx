@@ -1,7 +1,9 @@
 "use client"
 
-import { useState, useRef, useCallback } from "react"
+import { useRef, useState } from "react"
+import DriverToggles from "./DriverToggles"
 import { TEAM_COLORS, teammateDashes } from "@/lib/design"
+import { useWidth } from "@/lib/useWidth"
 
 interface DriverSpeed {
   distance: number[]
@@ -11,10 +13,12 @@ interface DriverSpeed {
 interface Props {
   drivers: Record<string, DriverSpeed>
   top?: number
+  /** Shared cursor as a fraction of the lap (0–1), so a track map can follow along. */
+  cursor?: number | null
+  onCursor?: (fraction: number | null) => void
 }
 
-const W = 1000
-const H = 300
+const H = 320
 const PAD = { top: 12, right: 14, bottom: 34, left: 44 }
 
 function lerp(val: number, inMin: number, inMax: number, outMin: number, outMax: number) {
@@ -31,20 +35,20 @@ function closestIdx(arr: number[], target: number): number {
   return best
 }
 
-export default function SpeedTrace({ drivers, top = 10 }: Props) {
+export default function SpeedTrace({ drivers, top = 10, cursor, onCursor }: Props) {
   const driverCodes = Object.keys(drivers).slice(0, top)
   const dashes = teammateDashes(driverCodes)
   const [hidden, setHidden] = useState<Set<string>>(new Set())
   const [focused, setFocused] = useState<string | null>(null)
-  const [tooltip, setTooltip] = useState<{
-    x: number; dist: number; entries: { code: string; speed: number }[]
-  } | null>(null)
+  const [ownCursor, setOwnCursor] = useState<number | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
+  const [chartRef, W] = useWidth()
 
   if (driverCodes.length === 0) return null
 
-  const toggle = (code: string) =>
-    setHidden((prev) => { const n = new Set(prev); n.has(code) ? n.delete(code) : n.add(code); return n })
+  // Controlled when a parent shares the cursor, otherwise local.
+  const frac = cursor !== undefined ? cursor : ownCursor
+  const setFrac = onCursor ?? setOwnCursor
 
   const cL = PAD.left, cR = W - PAD.right, cT = PAD.top, cB = H - PAD.bottom
 
@@ -56,82 +60,52 @@ export default function SpeedTrace({ drivers, top = 10 }: Props) {
   const toX = (dist: number) => lerp(dist, minDist, maxDist, cL, cR)
   const toY = (speed: number) => lerp(speed, minSpeed, maxSpeed, cB, cT)
 
-  const handleMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+  function handleMove(e: React.PointerEvent<SVGSVGElement>) {
     if (!svgRef.current) return
     const rect = svgRef.current.getBoundingClientRect()
     const vx = ((e.clientX - rect.left) / rect.width) * W
-    if (vx < cL || vx > cR) { setTooltip(null); return }
+    setFrac(vx < cL || vx > cR ? null : (vx - cL) / (cR - cL))
+  }
 
-    const distF = lerp(vx, cL, cR, minDist, maxDist)
-
-    const entries: { code: string; speed: number }[] = []
-    for (const code of driverCodes) {
-      if (hidden.has(code)) continue
-      const { distance, speed } = drivers[code]
-      if (!distance.length) continue
-      const i = closestIdx(distance, distF)
-      entries.push({ code, speed: speed[i] })
-    }
-    entries.sort((a, b) => b.speed - a.speed)
-    setTooltip({ x: vx, dist: Math.round(distF), entries })
-  }, [driverCodes, hidden, drivers, minDist, maxDist, cL, cR])
+  // Values under the cursor, fastest first.
+  const tooltip = (() => {
+    if (frac == null) return null
+    const dist = minDist + frac * (maxDist - minDist)
+    const entries = driverCodes
+      .filter((code) => !hidden.has(code) && drivers[code].distance.length)
+      .map((code) => ({ code, speed: drivers[code].speed[closestIdx(drivers[code].distance, dist)] }))
+      .sort((a, b) => b.speed - a.speed)
+    return { x: toX(dist), dist: Math.round(dist), entries }
+  })()
 
   const gridSpeeds: number[] = []
   for (let s = Math.ceil(minSpeed / 50) * 50; s <= maxSpeed; s += 50) gridSpeeds.push(s)
 
   return (
-    <div className="glass-card p-4 space-y-3">
-      {/* Driver toggles */}
-      <div className="flex flex-wrap gap-2">
-        {driverCodes.map((code) => {
-          const color = TEAM_COLORS[code] ?? "#666"
-          const on = !hidden.has(code)
-          return (
-            <button
-              key={code}
-              onClick={() => toggle(code)}
-              onMouseEnter={() => setFocused(code)}
-              onMouseLeave={() => setFocused(null)}
-              className="flex items-center gap-1.5 px-2 py-1 rounded text-[0.6rem] font-(family-name:--font-dm-mono) uppercase tracking-wider transition-all cursor-pointer border"
-              style={{
-                opacity: on ? 1 : 0.25,
-                backgroundColor: on ? `${color}1a` : "transparent",
-                color: on ? color : "#444",
-                borderColor: on ? `${color}44` : "#222",
-              }}
-            >
-              <span
-                className="inline-block w-3.5"
-                style={{ borderTop: `2px ${dashes[code] ? "dashed" : "solid"} ${on ? color : "#444"}` }}
-              />
-              {code}
-            </button>
-          )
-        })}
-      </div>
+    <div className="min-w-0 space-y-5">
+      <DriverToggles codes={driverCodes} hidden={hidden} onChange={setHidden} onFocus={setFocused} dashes={dashes} />
 
-      <div className="relative">
+      <div ref={chartRef} className="relative">
         <svg
           ref={svgRef}
           viewBox={`0 0 ${W} ${H}`}
           width="100%"
-          className="block cursor-crosshair select-none"
-          onMouseMove={handleMove}
-          onMouseLeave={() => setTooltip(null)}
+          className="timing block cursor-crosshair touch-pan-y select-none"
+          onPointerMove={handleMove}
+          onPointerLeave={() => setFrac(null)}
         >
-          {/* Speed grid lines */}
           {gridSpeeds.map((speed) => {
             const y = toY(speed)
             return (
               <g key={speed}>
-                <line x1={cL} y1={y} x2={cR} y2={y} stroke="#1e1e1e" strokeWidth={1} />
-                <text x={cL - 4} y={y + 4} fontSize={13} fill="#444" textAnchor="end" fontFamily="var(--font-dm-mono)">{speed}</text>
+                <line x1={cL} y1={y} x2={cR} y2={y} className="stroke-border-subtle" strokeWidth={1} />
+                <text x={cL - 6} y={y + 4} fontSize={13} className="fill-text-muted" textAnchor="end">{speed}</text>
               </g>
             )
           })}
 
-          <text x={(cL + cR) / 2} y={H - 4} fontSize={11} fill="#444" textAnchor="middle" fontFamily="var(--font-dm-mono)">
-            DISTANCE (m)
+          <text x={(cL + cR) / 2} y={H - 6} fontSize={12} className="fill-text-muted" textAnchor="middle">
+            DISTANCE (M)
           </text>
 
           {/* Speed traces — focused driver drawn last (on top) */}
@@ -148,7 +122,7 @@ export default function SpeedTrace({ drivers, top = 10 }: Props) {
                   key={code}
                   points={pts}
                   fill="none"
-                  stroke={TEAM_COLORS[code] ?? "#666"}
+                  stroke={TEAM_COLORS[code] ?? "#888888"}
                   strokeWidth={isF ? 3.25 : 2}
                   strokeDasharray={dashes[code] || undefined}
                   strokeLinecap="round"
@@ -158,31 +132,29 @@ export default function SpeedTrace({ drivers, top = 10 }: Props) {
               )
             })}
 
-          {/* Crosshair + dots */}
           {tooltip && (
             <>
-              <line x1={tooltip.x} y1={cT} x2={tooltip.x} y2={cB} stroke="#ffffff1a" strokeWidth={1} strokeDasharray="4 3" />
+              <line x1={tooltip.x} y1={cT} x2={tooltip.x} y2={cB} className="stroke-text-muted" strokeWidth={1} strokeDasharray="4 3" />
               {tooltip.entries.map(({ code, speed }) => (
-                <circle key={code} cx={tooltip.x} cy={toY(speed)} r={4} fill={TEAM_COLORS[code] ?? "#666"} stroke="#0a0a0a" strokeWidth={1.5} />
+                <circle key={code} cx={tooltip.x} cy={toY(speed)} r={4} fill={TEAM_COLORS[code] ?? "#888888"} className="stroke-surface-0" strokeWidth={1.5} />
               ))}
             </>
           )}
         </svg>
 
-        {/* Floating tooltip */}
         {tooltip && tooltip.entries.length > 0 && (
           <div
-            className="absolute top-2 pointer-events-none z-10 glass-card border border-[#1e1e1e] px-3 py-2 min-w-24"
+            className="pointer-events-none absolute top-2 z-10 min-w-28 border border-border-default bg-surface-1 px-3 py-2 corner-sm"
             style={{
               left: tooltip.x / W > 0.72 ? "auto" : `calc(${(tooltip.x / W) * 100}% + 10px)`,
               right: tooltip.x / W > 0.72 ? `calc(${(1 - tooltip.x / W) * 100}% + 10px)` : "auto",
             }}
           >
-            <div className="text-[0.55rem] font-(family-name:--font-dm-mono) text-text-muted mb-1 tracking-wider">{tooltip.dist}m</div>
+            <div className="timing mb-1 text-[0.6875rem] text-text-muted">{tooltip.dist} M</div>
             {tooltip.entries.map(({ code, speed }) => (
-              <div key={code} className="flex justify-between gap-4 text-[0.6rem] font-(family-name:--font-dm-mono)">
-                <span style={{ color: TEAM_COLORS[code] ?? "#666" }}>{code}</span>
-                <span className="text-text-secondary">{Math.round(speed)} km/h</span>
+              <div key={code} className="timing flex justify-between gap-4 text-[0.75rem]">
+                <span style={{ color: TEAM_COLORS[code] }}>{code}</span>
+                <span className="text-text-secondary">{Math.round(speed)} KM/H</span>
               </div>
             ))}
           </div>

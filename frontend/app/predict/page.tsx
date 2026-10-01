@@ -1,9 +1,9 @@
-import NavHeader from "@/components/NavHeader"
+import type { Metadata } from "next"
 import PredictClient from "./PredictClient"
-import type { F1Event } from "../dashboard/page"
 import { getSchedule } from "@/lib/schedule"
 
 export const dynamic = "force-dynamic"
+export const metadata: Metadata = { title: "Predict" }
 
 export default async function PredictPage() {
   const { events, backendDown } = await getSchedule()
@@ -22,8 +22,7 @@ export default async function PredictPage() {
   }
 
   return (
-    <div className="min-h-screen px-4 sm:px-6 py-6 sm:py-8 max-w-7xl mx-auto space-y-6 sm:space-y-8">
-      <NavHeader active="predict" />
+    <div className="shell pt-8 sm:pt-10">
       <PredictClient nextRace={nextRace} backendDown={backendDown} locked={predictionsLocked} />
     </div>
   )

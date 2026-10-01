@@ -1,10 +1,12 @@
+import { RELOCATED, getCircuitImageCandidates } from "@/lib/circuits"
+
 export const FLAG_CODES: Record<string, string> = {
   Australia: "AU", Bahrain: "BH", "Saudi Arabia": "SA", Japan: "JP",
   China: "CN", "United States": "US", Italy: "IT", Monaco: "MC",
   Spain: "ES", Canada: "CA", Austria: "AT", "Great Britain": "GB", "United Kingdom": "GB",
   Hungary: "HU", Belgium: "BE", Netherlands: "NL", Azerbaijan: "AZ",
   Singapore: "SG", Mexico: "MX", Brazil: "BR", Qatar: "QA",
-  "Abu Dhabi": "AE", "United Arab Emirates": "AE",
+  "Abu Dhabi": "AE", "United Arab Emirates": "AE", Malaysia: "MY",
 }
 
 const TRACK_IMAGES_MAP: Record<string, string> = {
@@ -19,6 +21,7 @@ const TRACK_IMAGES_MAP: Record<string, string> = {
 }
 
 export function getTrackImage(country: string, eventName: string): string | null {
+  if (RELOCATED[eventName]) return getCircuitImageCandidates(country, eventName)[0] ?? null
   const n = eventName.toLowerCase()
   if (country === "United States") {
     if (n.includes("miami")) return "/assets/tracks/Miami.png"

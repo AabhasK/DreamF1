@@ -1,174 +1,265 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
 import Link from "next/link"
-import Image from "next/image"
-import { useRouter } from "next/navigation"
-import { clearSession } from "@/lib/auth"
+import { usePathname, useRouter } from "next/navigation"
+import { clearSession, useSession } from "@/lib/auth"
+import Logo from "@/components/Logo"
+import { currentOrNextSession, shortCountdown, splitRaceName, type F1Event } from "@/lib/f1"
 
-type NavKey = "dashboard" | "telemetry" | "compare" | "standings" | "predict" | "predictions" | "circles"
-
-const LINKS: { href: string; label: string; key: NavKey }[] = [
-  { href: "/dashboard", label: "Dashboard", key: "dashboard" },
-  { href: "/telemetry", label: "Telemetry", key: "telemetry" },
-  { href: "/compare", label: "Compare", key: "compare" },
-  { href: "/standings", label: "Standings", key: "standings" },
-  { href: "/predict", label: "Predict", key: "predict" },
-  { href: "/predictions", label: "My Picks", key: "predictions" },
-  { href: "/circles", label: "Circles", key: "circles" },
+const LINKS = [
+  { href: "/dashboard", label: "Home" },
+  { href: "/telemetry", label: "Telemetry" },
+  { href: "/compare", label: "Compare" },
+  { href: "/standings", label: "Standings" },
+  { href: "/predict", label: "Predict" },
+  { href: "/predictions", label: "My picks" },
+  { href: "/circles", label: "Circles" },
 ]
 
-export default function NavHeader({ active }: { active?: NavKey }) {
-  const [loggedIn, setLoggedIn] = useState(false)
-  const [username, setUsername] = useState<string | null>(null)
-  const [open, setOpen] = useState(false)
-  const router = useRouter()
+// Every page shares one header, so the schedule is fetched once per tab.
+let schedulePromise: Promise<F1Event[]> | null = null
+function loadSchedule(): Promise<F1Event[]> {
+  schedulePromise ??= fetch(`${process.env.NEXT_PUBLIC_API_URL ?? ""}/api/schedule`)
+    .then((r) => (r.ok ? r.json() : []))
+    .then((d) => (Array.isArray(d) ? d : []))
+    .catch(() => {
+      schedulePromise = null
+      return []
+    })
+  return schedulePromise
+}
+
+function isActive(pathname: string, href: string) {
+  return pathname === href || pathname.startsWith(`${href}/`)
+}
+
+/** "Bahrain  FP1  12h 41m" — the next session on the calendar, or the one running now. */
+function SessionTicker({ compact = false }: { compact?: boolean }) {
+  const [events, setEvents] = useState<F1Event[] | null>(null)
+  const [now, setNow] = useState<number | null>(null)
 
   useEffect(() => {
-    setLoggedIn(!!localStorage.getItem("token"))
-    setUsername(localStorage.getItem("username"))
+    let alive = true
+    loadSchedule().then((e) => alive && setEvents(e))
+    const tick = () => setNow(Date.now())
+    tick()
+    const id = setInterval(tick, 30_000)
+    return () => {
+      alive = false
+      clearInterval(id)
+    }
   }, [])
+
+  if (!events || now === null) return null
+  const info = currentOrNextSession(events, now)
+  if (!info) return null
+  const { event, session, live } = info
+  const when = live ? "is live now" : `starts in ${shortCountdown(session.start.getTime(), now)}`
+
+  return (
+    <Link
+      href="/predict"
+      aria-label={`${event.event_name}: ${session.name} ${when}`}
+      className="inline-flex h-9 items-center gap-2 whitespace-nowrap border border-border-default px-3 text-[0.8125rem] transition-colors corner-sm hover:border-border-muted"
+    >
+      <span className="relative flex size-2 shrink-0" aria-hidden="true">
+        {live && <span className="absolute inset-0 rounded-full bg-f1-red opacity-75 motion-safe:animate-ping" />}
+        <span className={`relative size-2 rounded-full ${live ? "bg-f1-red" : "bg-text-muted"}`} />
+      </span>
+      {!compact && <span className="font-semibold text-text-primary">{splitRaceName(event.event_name).place}</span>}
+      <span className="timing text-[0.75rem] text-text-secondary">{session.abbrev}</span>
+      <span className="timing text-[0.75rem] text-text-primary">
+        {live ? "LIVE" : shortCountdown(session.start.getTime(), now)}
+      </span>
+    </Link>
+  )
+}
+
+function UserBadge({ name, size = "size-7" }: { name: string | null; size?: string }) {
+  return (
+    <span
+      className={`heading flex ${size} shrink-0 items-center justify-center bg-f1-red text-[0.8rem] text-white corner-sm`}
+      aria-hidden="true"
+    >
+      {(name ?? "?").charAt(0).toUpperCase()}
+    </span>
+  )
+}
+
+export default function NavHeader() {
+  const pathname = usePathname()
+  const router = useRouter()
+  const { token, username } = useSession()
+  const authed = token === undefined ? null : !!token
+  const user = username ?? null
+  const [open, setOpen] = useState(false)
+  const toggleRef = useRef<HTMLButtonElement>(null)
+  const closeRef = useRef<HTMLButtonElement>(null)
+
+  // Open menu: focus the close button, close on Escape, freeze the page behind it.
+  useEffect(() => {
+    if (!open) return
+    closeRef.current?.focus()
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== "Escape") return
+      setOpen(false)
+      toggleRef.current?.focus()
+    }
+    document.addEventListener("keydown", onKey)
+    const prev = document.documentElement.style.overflow
+    document.documentElement.style.overflow = "hidden"
+    return () => {
+      document.removeEventListener("keydown", onKey)
+      document.documentElement.style.overflow = prev
+    }
+  }, [open])
+
+  function closeMenu() {
+    setOpen(false)
+    toggleRef.current?.focus()
+  }
 
   function logout() {
     clearSession()
+    setOpen(false)
     router.push("/login")
   }
 
-  function close() {
-    setOpen(false)
-  }
-
   return (
-    <header>
-      {/* Top bar */}
-      <div className="flex items-center justify-between gap-4">
-        <Link href="/dashboard" className="shrink-0" onClick={close}>
-          <Image
-            src="/logo.svg"
-            alt="DreamF1"
-            width={80}
-            height={27}
-            priority
-            className="w-12 sm:w-16 h-auto"
-          />
-        </Link>
+    <>
+      <header className="sticky top-0 z-40 border-b border-border-subtle bg-surface-0/88 backdrop-blur-md">
+        <div className="shell flex h-(--nav-h) items-center gap-4 lg:gap-8">
+          <Link href="/dashboard" className="shrink-0 text-[1.05rem] sm:text-[1.15rem]" aria-label="DreamF1 home">
+            <Logo />
+          </Link>
 
-        {/* Desktop nav */}
-        <nav className="hidden sm:flex items-center gap-5 text-[0.7rem] font-(family-name:--font-dm-mono) uppercase tracking-wider">
-          {LINKS.map(({ href, label, key }) => (
-            <Link
-              key={key}
-              href={href}
-              className={
-                active === key
-                  ? "text-text-primary"
-                  : "text-text-muted hover:text-text-primary transition-colors"
-              }
-            >
-              {label}
-            </Link>
-          ))}
-
-          {loggedIn ? (
-            <div className="flex items-center gap-2.5 pl-2.5 border-l border-[#1e1e1e]">
-              {username && (
-                <span
-                  className="flex items-center justify-center w-5 h-5 rounded-full bg-f1-red
-                             text-white text-[0.55rem] font-bold shrink-0"
-                  title={username}
+          <nav aria-label="Main" className="hidden h-full items-stretch lg:flex">
+            {LINKS.map(({ href, label }) => {
+              const active = isActive(pathname, href)
+              return (
+                <Link
+                  key={href}
+                  href={href}
+                  aria-current={active ? "page" : undefined}
+                  className={`relative flex items-center px-3 text-[0.875rem] font-medium transition-colors ${
+                    active ? "text-text-primary" : "text-text-muted hover:text-text-primary"
+                  }`}
                 >
-                  {username.charAt(0).toUpperCase()}
-                </span>
-              )}
-              <button
-                onClick={logout}
-                className="text-text-muted hover:text-f1-red transition-colors cursor-pointer"
-              >
-                Log Out
-              </button>
-            </div>
-          ) : (
-            <Link
-              href="/login"
-              className="px-3 py-1 bg-f1-red text-white text-[0.7rem]
-                         font-(family-name:--font-dm-mono) uppercase tracking-widest
-                         hover:bg-f1-red-dark transition-colors shrink-0"
-            >
-              Sign In
-            </Link>
-          )}
-        </nav>
+                  {label}
+                  {active && <span className="absolute inset-x-3 -bottom-px h-0.5 bg-f1-red" aria-hidden="true" />}
+                </Link>
+              )
+            })}
+          </nav>
 
-        {/* Mobile right side: auth + hamburger */}
-        <div className="flex sm:hidden items-center gap-3">
-          {loggedIn ? (
-            <span
-              className="flex items-center justify-center w-6 h-6 rounded-full bg-f1-red
-                         text-white text-[0.6rem] font-bold shrink-0"
-              title={username ?? ""}
-            >
-              {username?.charAt(0).toUpperCase() ?? "U"}
+          <div className="ml-auto flex items-center gap-2.5 sm:gap-3">
+            <span className="hidden xl:inline-flex">
+              <SessionTicker />
             </span>
-          ) : (
-            <Link
-              href="/login"
-              className="px-3 py-1 bg-f1-red text-white text-[0.6rem]
-                         font-(family-name:--font-dm-mono) uppercase tracking-widest
-                         hover:bg-f1-red-dark transition-colors shrink-0"
-            >
-              Sign In
-            </Link>
-          )}
+            <span className="inline-flex xl:hidden">
+              <SessionTicker compact />
+            </span>
 
-          <button
-            onClick={() => setOpen((o) => !o)}
-            aria-label="Toggle menu"
-            className="flex flex-col justify-center items-center gap-1.25 w-7 h-7 shrink-0"
-          >
-            <span
-              className={`block h-px w-5 bg-text-secondary transition-all duration-200 origin-center
-                          ${open ? "rotate-45 translate-y-1.5" : ""}`}
-            />
-            <span
-              className={`block h-px w-5 bg-text-secondary transition-all duration-200
-                          ${open ? "opacity-0" : ""}`}
-            />
-            <span
-              className={`block h-px w-5 bg-text-secondary transition-all duration-200 origin-center
-                          ${open ? "-rotate-45 -translate-y-1.5" : ""}`}
-            />
+            <div className="hidden min-w-24 items-center justify-end gap-3 lg:flex">
+              {authed === null ? null : authed ? (
+                <>
+                  <span className="flex items-center gap-2 text-[0.875rem] text-text-secondary" title={user ?? undefined}>
+                    <UserBadge name={user} />
+                    <span className="max-w-28 truncate">{user}</span>
+                  </span>
+                  <button
+                    onClick={logout}
+                    className="text-[0.875rem] font-medium text-text-muted transition-colors hover:text-text-primary"
+                  >
+                    Log out
+                  </button>
+                </>
+              ) : (
+                <Link href="/login" className="btn btn-primary btn-sm">
+                  Sign in
+                </Link>
+              )}
+            </div>
+
+            <button
+              ref={toggleRef}
+              onClick={() => setOpen(true)}
+              aria-expanded={open}
+              aria-controls="site-menu"
+              className="flex size-10 flex-col items-center justify-center gap-1.5 lg:hidden"
+            >
+              <span className="sr-only">Open menu</span>
+              <span className="block h-0.5 w-5 bg-text-primary" aria-hidden="true" />
+              <span className="block h-0.5 w-5 bg-text-primary" aria-hidden="true" />
+            </button>
+          </div>
+        </div>
+      </header>
+
+      {/* Kept outside <header>: its backdrop-filter would otherwise become the
+          containing block for this fixed overlay. */}
+      <div
+        id="site-menu"
+        role="dialog"
+        aria-modal="true"
+        aria-label="Menu"
+        inert={!open}
+        data-lenis-prevent
+        className={`fixed inset-0 z-50 flex flex-col bg-surface-0 transition-[opacity,transform] duration-300 ease-snap lg:hidden ${
+          open ? "opacity-100" : "pointer-events-none -translate-y-2 opacity-0"
+        }`}
+      >
+        <div className="shell flex h-(--nav-h) shrink-0 items-center justify-between border-b border-border-subtle">
+          <Link href="/dashboard" onClick={() => setOpen(false)} className="text-[1.05rem]" aria-label="DreamF1 home">
+            <Logo />
+          </Link>
+          <button ref={closeRef} onClick={closeMenu} className="relative flex size-10 items-center justify-center">
+            <span className="sr-only">Close menu</span>
+            <span className="absolute h-0.5 w-5 rotate-45 bg-text-primary" aria-hidden="true" />
+            <span className="absolute h-0.5 w-5 -rotate-45 bg-text-primary" aria-hidden="true" />
           </button>
         </div>
-      </div>
 
-      {/* Mobile drawer */}
-      <div
-        className={`sm:hidden overflow-hidden transition-all duration-200
-                    ${open ? "max-h-96 opacity-100" : "max-h-0 opacity-0"}`}
-      >
-        <nav className="flex flex-col pt-4 pb-2 gap-1 border-t border-border-subtle mt-4
-                        font-(family-name:--font-dm-mono) uppercase tracking-wider text-xs">
-          {LINKS.map(({ href, label, key }) => (
-            <Link
-              key={key}
-              href={href}
-              onClick={close}
-              className={`py-2.5 px-1 border-b border-border-subtle last:border-0
-                          ${active === key ? "text-text-primary" : "text-text-muted"}`}
-            >
-              {label}
-            </Link>
-          ))}
-          {loggedIn && (
-            <button
-              onClick={() => { logout(); close() }}
-              className="py-2.5 px-1 text-left text-text-muted hover:text-f1-red transition-colors cursor-pointer"
-            >
-              Log Out
-            </button>
-          )}
+        <nav aria-label="Main" className="shell flex-1 overflow-y-auto py-4">
+          <ul>
+            {LINKS.map(({ href, label }) => {
+              const active = isActive(pathname, href)
+              return (
+                <li key={href} className="border-b border-border-subtle">
+                  <Link
+                    href={href}
+                    onClick={() => setOpen(false)}
+                    aria-current={active ? "page" : undefined}
+                    className={`flex items-center justify-between py-3.5 ${active ? "text-text-primary" : "text-text-secondary"}`}
+                  >
+                    <span className="display text-[clamp(1.75rem,8vw,2.5rem)]">{label}</span>
+                    {active && <span className="h-6 w-1.5 bg-f1-red" aria-hidden="true" />}
+                  </Link>
+                </li>
+              )
+            })}
+          </ul>
         </nav>
+
+        <div className="shell flex shrink-0 items-center justify-between gap-3 border-t border-border-subtle py-4">
+          {authed ? (
+            <>
+              <span className="flex min-w-0 items-center gap-2.5 text-text-secondary">
+                <UserBadge name={user} size="size-8" />
+                <span className="truncate">{user}</span>
+              </span>
+              <button onClick={logout} className="btn btn-ghost btn-sm">
+                Log out
+              </button>
+            </>
+          ) : (
+            <Link href="/login" onClick={() => setOpen(false)} className="btn btn-primary w-full">
+              Sign in
+            </Link>
+          )}
+        </div>
       </div>
-    </header>
+    </>
   )
 }

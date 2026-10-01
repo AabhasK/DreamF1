@@ -21,6 +21,12 @@ export interface WeatherData {
   }
 }
 
+// Chart series colours
+const TRACK = "#F47600"
+const AIR = "#4781D7"
+const HUMIDITY = "#00D7B6"
+const WIND = "#C084FC"
+
 const W = 900
 const H = 240
 const PAD = { l: 38, r: 14, t: 14, b: 26 }
@@ -73,29 +79,12 @@ function areaPath(
   return `${line} L${lastX[1]},${base} L${first[1]},${base} Z`
 }
 
-function Stat({
-  label,
-  value,
-  sub,
-  accent,
-}: {
-  label: string
-  value: string
-  sub?: string
-  accent?: string
-}) {
+function Stat({ label, value, sub }: { label: string; value: string; sub?: string }) {
   return (
-    <div className="glass-card p-3 sm:p-4 flex flex-col gap-1" style={{ boxShadow: accent ? `inset 2px 0 0 ${accent}` : undefined }}>
-      <span className="text-[0.55rem] font-(family-name:--font-dm-mono) uppercase tracking-widest text-text-muted">
-        {label}
-      </span>
-      <span
-        className="font-(family-name:--font-orbitron) text-xl font-bold tabular-nums leading-none"
-        style={{ color: accent ?? "var(--color-text-primary)" }}
-      >
-        {value}
-      </span>
-      {sub && <span className="text-[0.55rem] font-(family-name:--font-dm-mono) text-text-dim">{sub}</span>}
+    <div className="sm:border-l sm:border-border-subtle sm:pl-6 sm:first:border-l-0 sm:first:pl-0">
+      <dt className="label">{label}</dt>
+      <dd className="timing mt-1.5 text-[1.5rem] leading-none">{value}</dd>
+      {sub && <p className="timing mt-1.5 text-[0.6875rem] text-text-muted">{sub}</p>}
     </div>
   )
 }
@@ -143,20 +132,21 @@ function Sparkline({
   }
 
   return (
-    <div className="glass-card p-4">
-      <div className="flex items-baseline justify-between mb-2">
-        <span className="section-label">{label}</span>
-        <span className="font-(family-name:--font-orbitron) text-sm font-bold tabular-nums" style={{ color }}>
+    <div className="border-t border-border-subtle pt-4">
+      <div className="mb-2 flex items-baseline justify-between">
+        <span className="text-[0.875rem] font-semibold">{label}</span>
+        <span className="timing text-[0.875rem]" style={{ color }}>
           {avg != null ? `${avg}${unit}` : "—"}
           {peak != null && (
-            <span className="ml-1.5 text-[0.55rem] font-(family-name:--font-dm-mono) text-text-dim">
-              max {peak}{unit}
+            <span className="ml-2 text-[0.6875rem] text-text-muted">
+              MAX {peak}
+              {unit}
             </span>
           )}
         </span>
       </div>
       <svg viewBox={`0 0 ${sw} ${sh}`} className="w-full" style={{ height: "auto" }}>
-        <line x1={sp.l} y1={sh - sp.b} x2={sw - sp.r} y2={sh - sp.b} stroke="#1a1a1a" strokeWidth={1} />
+        <line x1={sp.l} y1={sh - sp.b} x2={sw - sp.r} y2={sh - sp.b} className="stroke-border-subtle" strokeWidth={1} />
         <path d={d.trim()} fill="none" stroke={color} strokeWidth={1.75} strokeLinejoin="round" />
       </svg>
     </div>
@@ -176,125 +166,75 @@ export default function Weather({ data }: { data: WeatherData }) {
   const yTicks = [yMin, Math.round((yMin + yMax) / 2), yMax]
 
   return (
-    <div className="space-y-5">
-      {/* ── Conditions hero ──────────────────────────────────── */}
-      <div
-        className="relative overflow-hidden rounded-lg border border-border-default p-4 sm:p-5"
-        style={{
-          background: s.rained
-            ? "linear-gradient(110deg, #0c1726 0%, #0a0a0a 55%)"
-            : "linear-gradient(110deg, #1a1206 0%, #0a0a0a 55%)",
-        }}
-      >
-        <div className="flex flex-wrap items-center gap-x-8 gap-y-3">
-          <div className="flex items-center gap-3">
-            <span className="text-3xl" aria-hidden>
-              {s.rained ? "🌧️" : "☀️"}
-            </span>
-            <div>
-              <p className="section-label leading-none mb-1">Conditions</p>
-              <p
-                className="font-(family-name:--font-orbitron) text-2xl font-bold leading-none"
-                style={{ color: s.rained ? "#4781D7" : "#F47600" }}
-              >
-                {s.rained ? "WET" : "DRY"}
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-x-6 gap-y-2">
-            <HeroStat label="Track" value={s.track_temp_avg != null ? `${s.track_temp_avg}°` : "—"} color="#F47600" />
-            <HeroStat label="Air" value={s.air_temp_avg != null ? `${s.air_temp_avg}°` : "—"} color="#4781D7" />
-            <HeroStat label="Humidity" value={s.humidity_avg != null ? `${s.humidity_avg}%` : "—"} color="#00D7B6" />
-            <HeroStat label="Wind" value={s.wind_avg != null ? `${s.wind_avg} m/s` : "—"} color="#c084fc" />
-          </div>
+    <div className="space-y-10">
+      <dl className="grid grid-cols-2 gap-x-6 gap-y-6 sm:grid-cols-5">
+        <div>
+          <dt className="label">Conditions</dt>
+          <dd className={`heading mt-1.5 text-[1.5rem] leading-none ${s.rained ? "text-f1-yellow" : ""}`}>
+            {s.rained ? "Wet" : "Dry"}
+          </dd>
         </div>
-      </div>
-
-      {/* ── Detailed tiles ───────────────────────────────────── */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 sm:gap-3">
         <Stat
-          label="Track Temp"
+          label="Track"
           value={s.track_temp_avg != null ? `${s.track_temp_avg}°` : "—"}
-          sub={s.track_temp_min != null ? `${s.track_temp_min}° – ${s.track_temp_max}°` : undefined}
-          accent="#F47600"
+          sub={s.track_temp_min != null ? `${s.track_temp_min}° TO ${s.track_temp_max}°` : undefined}
         />
         <Stat
-          label="Air Temp"
+          label="Air"
           value={s.air_temp_avg != null ? `${s.air_temp_avg}°` : "—"}
-          sub={s.air_temp_min != null ? `${s.air_temp_min}° – ${s.air_temp_max}°` : undefined}
-          accent="#4781D7"
+          sub={s.air_temp_min != null ? `${s.air_temp_min}° TO ${s.air_temp_max}°` : undefined}
         />
-        <Stat
-          label="Humidity"
-          value={s.humidity_avg != null ? `${s.humidity_avg}%` : "—"}
-          accent="#00D7B6"
-        />
+        <Stat label="Humidity" value={s.humidity_avg != null ? `${s.humidity_avg}%` : "—"} />
         <Stat
           label="Wind"
           value={s.wind_avg != null ? `${s.wind_avg} m/s` : "—"}
-          sub={s.wind_max != null ? `gusts to ${s.wind_max} m/s` : undefined}
-          accent="#c084fc"
+          sub={s.wind_max != null ? `GUSTS ${s.wind_max} M/S` : undefined}
         />
-      </div>
+      </dl>
 
-      {/* ── Temperature chart ────────────────────────────────── */}
-      <div className="glass-card p-4">
-        <div className="flex items-center justify-between mb-2">
-          <p className="section-label">Track vs Air Temperature</p>
-          <div className="flex items-center gap-4 text-[0.55rem] font-(family-name:--font-dm-mono) uppercase tracking-widest">
+      <figure>
+        <figcaption className="flex flex-wrap items-center justify-between gap-3">
+          <span className="text-[0.875rem] font-semibold">Track and air temperature through the race</span>
+          <span className="flex items-center gap-4 text-[0.8125rem] text-text-secondary">
             <span className="flex items-center gap-1.5">
-              <span className="w-3 h-0.5 inline-block" style={{ background: "#F47600" }} /> Track
+              <span className="inline-block h-0.5 w-4" style={{ background: TRACK }} /> Track
             </span>
             <span className="flex items-center gap-1.5">
-              <span className="w-3 h-0.5 inline-block" style={{ background: "#4781D7" }} /> Air
+              <span className="inline-block h-0.5 w-4" style={{ background: AIR }} /> Air
             </span>
-          </div>
-        </div>
-        <div className="overflow-x-auto">
-          <svg viewBox={`0 0 ${W} ${H}`} className="w-full min-w-[36rem]" style={{ height: "auto" }}>
+          </span>
+        </figcaption>
+        <div className="mt-3 overflow-x-auto">
+          <svg viewBox={`0 0 ${W} ${H}`} className="timing w-full min-w-[36rem]" style={{ height: "auto" }}>
             <defs>
               <linearGradient id="trackFill" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor="#F47600" stopOpacity="0.28" />
-                <stop offset="100%" stopColor="#F47600" stopOpacity="0" />
+                <stop offset="0%" stopColor={TRACK} stopOpacity="0.22" />
+                <stop offset="100%" stopColor={TRACK} stopOpacity="0" />
               </linearGradient>
             </defs>
             {yTicks.map((v) => (
               <g key={v}>
-                <line x1={PAD.l} y1={scaleY(v, yMin, yMax)} x2={W - PAD.r} y2={scaleY(v, yMin, yMax)} stroke="#1a1a1a" strokeWidth={1} />
-                <text x={PAD.l - 6} y={scaleY(v, yMin, yMax) + 3} textAnchor="end" fill="#666" fontSize={10} fontFamily="monospace">
+                <line x1={PAD.l} y1={scaleY(v, yMin, yMax)} x2={W - PAD.r} y2={scaleY(v, yMin, yMax)} className="stroke-border-subtle" strokeWidth={1} />
+                <text x={PAD.l - 6} y={scaleY(v, yMin, yMax) + 3} textAnchor="end" className="fill-text-muted" fontSize={10}>
                   {v}°
                 </text>
               </g>
             ))}
-            <text x={PAD.l} y={H - 7} fill="#666" fontSize={10} fontFamily="monospace">0 min</text>
-            <text x={W - PAD.r} y={H - 7} textAnchor="end" fill="#666" fontSize={10} fontFamily="monospace">
-              {Math.round(xMax)} min
+            <text x={PAD.l} y={H - 7} className="fill-text-muted" fontSize={10}>0 MIN</text>
+            <text x={W - PAD.r} y={H - 7} textAnchor="end" className="fill-text-muted" fontSize={10}>
+              {Math.round(xMax)} MIN
             </text>
             <path d={areaPath(data.time, data.track_temp, yMin, yMax, xMin, xMax)} fill="url(#trackFill)" />
-            <path d={linePath(data.time, data.track_temp, yMin, yMax, xMin, xMax)} fill="none" stroke="#F47600" strokeWidth={1.9} strokeLinejoin="round" />
-            <path d={linePath(data.time, data.air_temp, yMin, yMax, xMin, xMax)} fill="none" stroke="#4781D7" strokeWidth={1.9} strokeLinejoin="round" />
+            <path d={linePath(data.time, data.track_temp, yMin, yMax, xMin, xMax)} fill="none" stroke={TRACK} strokeWidth={1.9} strokeLinejoin="round" />
+            <path d={linePath(data.time, data.air_temp, yMin, yMax, xMin, xMax)} fill="none" stroke={AIR} strokeWidth={1.9} strokeLinejoin="round" />
           </svg>
         </div>
-      </div>
+      </figure>
 
-      {/* ── Humidity + wind sparklines ───────────────────────── */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-        <Sparkline label="Humidity · race" unit="%" vals={data.humidity} time={data.time} color="#00D7B6" avg={s.humidity_avg} />
-        <Sparkline label="Wind speed · race" unit=" m/s" vals={data.wind_speed} time={data.time} color="#c084fc" avg={s.wind_avg} peak={s.wind_max} />
+      <div className="grid grid-cols-1 gap-x-10 gap-y-6 sm:grid-cols-2">
+        <Sparkline label="Humidity" unit="%" vals={data.humidity} time={data.time} color={HUMIDITY} avg={s.humidity_avg} />
+        <Sparkline label="Wind speed" unit=" m/s" vals={data.wind_speed} time={data.time} color={WIND} avg={s.wind_avg} peak={s.wind_max} />
       </div>
-    </div>
-  )
-}
-
-function HeroStat({ label, value, color }: { label: string; value: string; color: string }) {
-  return (
-    <div>
-      <p className="text-[0.5rem] font-(family-name:--font-dm-mono) uppercase tracking-widest text-text-muted leading-none mb-1">
-        {label}
-      </p>
-      <p className="font-(family-name:--font-orbitron) text-base font-bold tabular-nums leading-none" style={{ color }}>
-        {value}
-      </p>
     </div>
   )
 }

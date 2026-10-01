@@ -14,6 +14,10 @@ export interface CircuitFacts {
 }
 
 export const CIRCUITS: Record<string, CircuitFacts> = {
+  Malaysia: { name: "Sepang International Circuit", length_km: 5.543, first_gp: 1999, laps: 56 },
+  Bahrain: { name: "Bahrain International Circuit", length_km: 5.412, first_gp: 2004, laps: 57 },
+  SaudiArabia: { name: "Jeddah Corniche Circuit", length_km: 6.174, first_gp: 2021, laps: 50 },
+  Imola: { name: "Autodromo Enzo e Dino Ferrari", length_km: 4.909, first_gp: 1980, laps: 63 },
   Australia: { name: "Albert Park Circuit", length_km: 5.278, first_gp: 1996, laps: 58 },
   China: { name: "Shanghai International Circuit", length_km: 5.451, first_gp: 2004, laps: 56 },
   Japan: { name: "Suzuka Circuit", length_km: 5.807, first_gp: 1987, laps: 53 },
@@ -41,6 +45,7 @@ export const CIRCUITS: Record<string, CircuitFacts> = {
 // Circuit key → detailed diagram filename (in /public/assets/2026tracks/, .avif).
 // Circuits not listed here keep the GPS telemetry glow-map fallback.
 const IMAGE_FILE: Record<string, string> = {
+  Malaysia: "2026trackkualalumpurdetailed",
   Australia: "2026trackmelbournedetailed",
   China: "2026trackshanghaidetailed",
   Japan: "2026tracksuzukadetailed",
@@ -64,8 +69,18 @@ const IMAGE_FILE: Record<string, string> = {
   UnitedArabEmirates: "2026trackyasmarinacircuitdetailed",
 }
 
+/**
+ * 2026 rounds held away from the country FastF1 files them under. The Bahrain
+ * Grand Prix runs at Sepang this year ("Bahrain Grand Prix in Malaysia",
+ * FastF1 location Kuala Lumpur), but the schedule API only carries the country.
+ */
+export const RELOCATED: Record<string, { key: string; country: string; city: string }> = {
+  "Bahrain Grand Prix": { key: "Malaysia", country: "Malaysia", city: "Kuala Lumpur" },
+}
+
 /** Resolve a country + event name to the circuit key (handles shared countries). */
 export function getCircuitKey(country: string, eventName: string): string | null {
+  if (RELOCATED[eventName]) return RELOCATED[eventName].key
   const n = eventName.toLowerCase()
   if (country === "United States") {
     if (n.includes("miami")) return "Miami"

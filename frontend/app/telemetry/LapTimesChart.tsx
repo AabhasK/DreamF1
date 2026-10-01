@@ -1,7 +1,9 @@
 "use client"
 
-import { useState, useRef, useCallback } from "react"
+import { useState, useRef } from "react"
+import DriverToggles from "./DriverToggles"
 import { TEAM_COLORS } from "@/lib/design"
+import { useWidth } from "@/lib/useWidth"
 
 export interface LapTimesData {
   session: string
@@ -12,7 +14,6 @@ export interface LapTimesData {
   }>
 }
 
-const W = 1000
 const H = 340
 const PAD = { top: 14, right: 64, bottom: 38, left: 54 }
 
@@ -52,9 +53,7 @@ export default function LapTimesChart({ data }: { data: LapTimesData }) {
     x: number; lap: number; entries: { code: string; time: number; compound: string }[]
   } | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
-
-  const toggle = (code: string) =>
-    setHidden((prev) => { const n = new Set(prev); n.has(code) ? n.delete(code) : n.add(code); return n })
+  const [chartRef, W] = useWidth()
 
   const cL = PAD.left, cR = W - PAD.right, cT = PAD.top, cB = H - PAD.bottom
 
@@ -73,7 +72,7 @@ export default function LapTimesChart({ data }: { data: LapTimesData }) {
   const toX = (lap: number) => lerp(lap, minLap, maxLap, cL, cR)
   const toY = (t: number) => lerp(t, minTime, maxTime, cT, cB)
 
-  const handleMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+  function handleMove(e: React.PointerEvent<SVGSVGElement>) {
     if (!svgRef.current) return
     const rect = svgRef.current.getBoundingClientRect()
     const vx = ((e.clientX - rect.left) / rect.width) * W
@@ -94,7 +93,7 @@ export default function LapTimesChart({ data }: { data: LapTimesData }) {
     }
     entries.sort((a, b) => a.time - b.time)
     setTooltip({ x: toX(lap), lap, entries })
-  }, [codes, hidden, data, minLap, maxLap, cL, cR])
+  }
 
   // Y-axis gridlines: every ~0.5s, capped to 8 lines
   const timeTick = (maxTime - minTime) > 3 ? 1 : 0.5
@@ -106,11 +105,11 @@ export default function LapTimesChart({ data }: { data: LapTimesData }) {
   for (let l = Math.ceil(minLap / 10) * 10; l <= maxLap; l += 10) lapTicks.push(l)
 
   return (
-    <div className="glass-card p-4 space-y-3">
+    <div className="min-w-0 space-y-5">
       {/* Compound legend */}
-      <div className="flex items-center gap-4 pb-2 border-b border-[#1e1e1e] flex-wrap">
+      <div className="flex flex-wrap items-center gap-4 border-b border-border-subtle pb-3">
         {Object.entries(COMPOUND_COLORS).filter(([k]) => k !== "INTER").map(([c, color]) => (
-          <span key={c} className="flex items-center gap-1.5 text-[0.6rem] font-(family-name:--font-dm-mono) text-text-muted uppercase">
+          <span key={c} className="timing flex items-center gap-1.5 text-[0.6875rem] text-text-secondary">
             <span className="inline-block w-2 h-2 rounded-full" style={{ backgroundColor: color }} />
             {c}
           </span>
@@ -118,45 +117,24 @@ export default function LapTimesChart({ data }: { data: LapTimesData }) {
       </div>
 
       {/* Driver toggles */}
-      <div className="flex flex-wrap gap-2">
-        {codes.map((code) => {
-          const color = TEAM_COLORS[code] ?? "#666"
-          const on = !hidden.has(code)
-          return (
-            <button
-              key={code}
-              onClick={() => toggle(code)}
-              className="flex items-center gap-1.5 px-2 py-1 rounded text-[0.6rem] font-(family-name:--font-dm-mono) uppercase tracking-wider transition-all cursor-pointer border"
-              style={{
-                opacity: on ? 1 : 0.25,
-                backgroundColor: on ? `${color}1a` : "transparent",
-                color: on ? color : "#444",
-                borderColor: on ? `${color}44` : "#222",
-              }}
-            >
-              <span className="inline-block w-3 h-0.5 rounded" style={{ backgroundColor: on ? color : "#444" }} />
-              {code}
-            </button>
-          )
-        })}
-      </div>
+      <DriverToggles codes={codes} hidden={hidden} onChange={setHidden} />
 
-      <div className="relative">
+      <div ref={chartRef} className="relative">
         <svg
           ref={svgRef}
           viewBox={`0 0 ${W} ${H}`}
           width="100%"
-          className="block cursor-crosshair select-none"
-          onMouseMove={handleMove}
-          onMouseLeave={() => setTooltip(null)}
+          className="timing block cursor-crosshair touch-pan-y select-none"
+          onPointerMove={handleMove}
+          onPointerLeave={() => setTooltip(null)}
         >
           {/* Time grid */}
           {timeTicks.map((t) => {
             const y = toY(t)
             return (
               <g key={t}>
-                <line x1={cL} y1={y} x2={cR} y2={y} stroke="#1a1a1a" strokeWidth={1} />
-                <text x={cL - 6} y={y + 4} fontSize={11} fill="#444" textAnchor="end" fontFamily="var(--font-dm-mono)">
+                <line x1={cL} y1={y} x2={cR} y2={y} className="stroke-border-subtle" strokeWidth={1} />
+                <text x={cL - 6} y={y + 4} fontSize={11} className="fill-text-muted" textAnchor="end">
                   {fmtTime(t)}
                 </text>
               </g>
@@ -168,13 +146,13 @@ export default function LapTimesChart({ data }: { data: LapTimesData }) {
             const x = toX(lap)
             return (
               <g key={lap}>
-                <line x1={x} y1={cT} x2={x} y2={cB} stroke="#111" strokeWidth={1} />
-                <text x={x} y={H - 10} fontSize={11} fill="#444" textAnchor="middle" fontFamily="var(--font-dm-mono)">{lap}</text>
+                <line x1={x} y1={cT} x2={x} y2={cB} className="stroke-surface-2" strokeWidth={1} />
+                <text x={x} y={cB + 16} fontSize={11} className="fill-text-muted" textAnchor="middle">{lap}</text>
               </g>
             )
           })}
 
-          <text x={(cL + cR) / 2} y={H - 2} fontSize={11} fill="#333" textAnchor="middle" fontFamily="var(--font-dm-mono)">LAP</text>
+          <text x={(cL + cR) / 2} y={H - 2} fontSize={11} className="fill-text-muted" textAnchor="middle">LAP</text>
 
           {/* Lines + compound dots per driver */}
           {codes.filter((c) => !hidden.has(c)).map((code) => {
@@ -184,7 +162,7 @@ export default function LapTimesChart({ data }: { data: LapTimesData }) {
               .filter((x): x is { l: number; t: number; c: string } => x.t !== null)
 
             if (!valid.length) return null
-            const color = TEAM_COLORS[code] ?? "#666"
+            const color = TEAM_COLORS[code] ?? "#888888"
 
             // Build polyline segments — break line at compound changes (pit stops)
             const segments: { l: number; t: number; c: string }[][] = []
@@ -223,7 +201,7 @@ export default function LapTimesChart({ data }: { data: LapTimesData }) {
                 {(() => {
                   const last = valid[valid.length - 1]
                   return (
-                    <text x={toX(last.l) + 5} y={toY(last.t) + 4} fontSize={10} fill={color} fontFamily="var(--font-dm-mono)">{code}</text>
+                    <text x={toX(last.l) + 5} y={toY(last.t) + 4} fontSize={10} fill={color}>{code}</text>
                   )
                 })()}
               </g>
@@ -233,9 +211,9 @@ export default function LapTimesChart({ data }: { data: LapTimesData }) {
           {/* Crosshair */}
           {tooltip && (
             <>
-              <line x1={tooltip.x} y1={cT} x2={tooltip.x} y2={cB} stroke="#ffffff1a" strokeWidth={1} strokeDasharray="4 3" />
+              <line x1={tooltip.x} y1={cT} x2={tooltip.x} y2={cB} className="stroke-text-muted" strokeWidth={1} strokeDasharray="4 3" />
               {tooltip.entries.map(({ code, time }) => (
-                <circle key={code} cx={tooltip.x} cy={toY(time)} r={4} fill={TEAM_COLORS[code] ?? "#666"} stroke="#0a0a0a" strokeWidth={1.5} />
+                <circle key={code} cx={tooltip.x} cy={toY(time)} r={4} fill={TEAM_COLORS[code] ?? "#888888"} className="stroke-surface-0" strokeWidth={1.5} />
               ))}
             </>
           )}
@@ -243,21 +221,21 @@ export default function LapTimesChart({ data }: { data: LapTimesData }) {
 
         {tooltip && tooltip.entries.length > 0 && (
           <div
-            className="absolute top-2 pointer-events-none z-10 glass-card border border-[#1e1e1e] px-3 py-2 min-w-32"
+            className="pointer-events-none absolute top-2 z-10 border border-border-default bg-surface-1 px-3 py-2 corner-sm min-w-32"
             style={{
               left: tooltip.x / W > 0.72 ? "auto" : `calc(${(tooltip.x / W) * 100}% + 10px)`,
               right: tooltip.x / W > 0.72 ? `calc(${(1 - tooltip.x / W) * 100}% + 10px)` : "auto",
             }}
           >
-            <div className="text-[0.55rem] font-(family-name:--font-dm-mono) text-text-muted mb-1 tracking-wider">LAP {tooltip.lap}</div>
+            <div className="timing mb-1 text-[0.6875rem] text-text-muted">LAP {tooltip.lap}</div>
             {tooltip.entries.map(({ code, time, compound }) => (
-              <div key={code} className="flex items-center justify-between gap-4 text-[0.6rem] font-(family-name:--font-dm-mono)">
+              <div key={code} className="timing flex items-center justify-between gap-4 text-[0.75rem]">
                 <span className="flex items-center gap-1.5">
                   <span
                     className="inline-block w-1.5 h-1.5 rounded-full"
                     style={{ backgroundColor: COMPOUND_COLORS[compound.toUpperCase()] ?? "#555" }}
                   />
-                  <span style={{ color: TEAM_COLORS[code] ?? "#666" }}>{code}</span>
+                  <span style={{ color: TEAM_COLORS[code] ?? "#888888" }}>{code}</span>
                 </span>
                 <span className="text-text-secondary">{fmtTime(time)}</span>
               </div>

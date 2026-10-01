@@ -1,14 +1,15 @@
 "use client"
 
-import { useState, useRef, useCallback } from "react"
+import { useState, useRef } from "react"
+import DriverToggles from "./DriverToggles"
 import { TEAM_COLORS, teammateDashes } from "@/lib/design"
+import { useWidth } from "@/lib/useWidth"
 
 export interface GapData {
   session: string
   drivers: Record<string, { lap_numbers: number[]; gap_seconds: (number | null)[] }>
 }
 
-const W = 1000
 const H = 340
 const PAD = { top: 14, right: 64, bottom: 38, left: 58 }
 
@@ -47,9 +48,7 @@ export default function GapChart({ data }: { data: GapData }) {
     x: number; lap: number; entries: { code: string; gap: number }[]
   } | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
-
-  const toggle = (code: string) =>
-    setHidden((prev) => { const n = new Set(prev); n.has(code) ? n.delete(code) : n.add(code); return n })
+  const [chartRef, W] = useWidth()
 
   const cL = PAD.left, cR = W - PAD.right, cT = PAD.top, cB = H - PAD.bottom
 
@@ -69,7 +68,7 @@ export default function GapChart({ data }: { data: GapData }) {
 
   const zeroY = toY(0)
 
-  const handleMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+  function handleMove(e: React.PointerEvent<SVGSVGElement>) {
     if (!svgRef.current) return
     const rect = svgRef.current.getBoundingClientRect()
     const vx = ((e.clientX - rect.left) / rect.width) * W
@@ -90,7 +89,7 @@ export default function GapChart({ data }: { data: GapData }) {
     }
     entries.sort((a, b) => a.gap - b.gap)
     setTooltip({ x: toX(lap), lap, entries })
-  }, [codes, hidden, data, minLap, maxLap, cL, cR])
+  }
 
   const lapTicks: number[] = []
   for (let l = Math.ceil(minLap / 10) * 10; l <= maxLap; l += 10) lapTicks.push(l)
@@ -103,51 +102,25 @@ export default function GapChart({ data }: { data: GapData }) {
   for (let g = tickStart; g <= maxGap; g += interval) gapTicks.push(g)
 
   return (
-    <div className="glass-card p-4 space-y-3">
-      <div className="flex flex-wrap gap-2">
-        {codes.map((code) => {
-          const color = TEAM_COLORS[code] ?? "#666"
-          const on = !hidden.has(code)
-          return (
-            <button
-              key={code}
-              onClick={() => toggle(code)}
-              onMouseEnter={() => setFocused(code)}
-              onMouseLeave={() => setFocused(null)}
-              className="flex items-center gap-1.5 px-2 py-1 rounded text-[0.6rem] font-(family-name:--font-dm-mono) uppercase tracking-wider transition-all cursor-pointer border"
-              style={{
-                opacity: on ? 1 : 0.25,
-                backgroundColor: on ? `${color}1a` : "transparent",
-                color: on ? color : "#444",
-                borderColor: on ? `${color}44` : "#222",
-              }}
-            >
-              <span
-                className="inline-block w-3.5"
-                style={{ borderTop: `2px ${dashes[code] ? "dashed" : "solid"} ${on ? color : "#444"}` }}
-              />
-              {code}
-            </button>
-          )
-        })}
-      </div>
+    <div className="min-w-0 space-y-5">
+      <DriverToggles codes={codes} hidden={hidden} onChange={setHidden} onFocus={setFocused} dashes={dashes} />
 
-      <div className="relative">
+      <div ref={chartRef} className="relative">
         <svg
           ref={svgRef}
           viewBox={`0 0 ${W} ${H}`}
           width="100%"
-          className="block cursor-crosshair select-none"
-          onMouseMove={handleMove}
-          onMouseLeave={() => setTooltip(null)}
+          className="timing block cursor-crosshair touch-pan-y select-none"
+          onPointerMove={handleMove}
+          onPointerLeave={() => setTooltip(null)}
         >
           {/* Gap grid lines */}
           {gapTicks.map((gap) => {
             const y = toY(gap)
             return (
               <g key={gap}>
-                <line x1={cL} y1={y} x2={cR} y2={y} stroke="#1a1a1a" strokeWidth={1} />
-                <text x={cL - 6} y={y + 4} fontSize={11} fill="#444" textAnchor="end" fontFamily="var(--font-dm-mono)">
+                <line x1={cL} y1={y} x2={cR} y2={y} className="stroke-border-subtle" strokeWidth={1} />
+                <text x={cL - 6} y={y + 4} fontSize={11} className="fill-text-muted" textAnchor="end">
                   {gap === 0 ? "0" : gap > 0 ? `+${gap}s` : `${gap}s`}
                 </text>
               </g>
@@ -155,21 +128,21 @@ export default function GapChart({ data }: { data: GapData }) {
           })}
 
           {/* Race winner baseline at gap=0 */}
-          <line x1={cL} y1={zeroY} x2={cR} y2={zeroY} stroke="#ED1131" strokeWidth={1} opacity={0.35} strokeDasharray="5 3" />
-          <text x={cL - 6} y={zeroY + 4} fontSize={10} fill="#ED1131" textAnchor="end" fontFamily="var(--font-dm-mono)" opacity={0.6}>P1</text>
+          <line x1={cL} y1={zeroY} x2={cR} y2={zeroY} className="stroke-f1-red" strokeWidth={1} opacity={0.5} strokeDasharray="5 3" />
+          <text x={cL - 6} y={zeroY + 4} fontSize={11} className="fill-f1-red" textAnchor="end">P1</text>
 
           {/* Lap ticks */}
           {lapTicks.map((lap) => {
             const x = toX(lap)
             return (
               <g key={lap}>
-                <line x1={x} y1={cT} x2={x} y2={cB} stroke="#111" strokeWidth={1} />
-                <text x={x} y={H - 10} fontSize={11} fill="#444" textAnchor="middle" fontFamily="var(--font-dm-mono)">{lap}</text>
+                <line x1={x} y1={cT} x2={x} y2={cB} className="stroke-surface-2" strokeWidth={1} />
+                <text x={x} y={cB + 16} fontSize={11} className="fill-text-muted" textAnchor="middle">{lap}</text>
               </g>
             )
           })}
 
-          <text x={(cL + cR) / 2} y={H - 2} fontSize={11} fill="#333" textAnchor="middle" fontFamily="var(--font-dm-mono)">LAP</text>
+          <text x={(cL + cR) / 2} y={H - 2} fontSize={11} className="fill-text-muted" textAnchor="middle">LAP</text>
 
           {/* Gap lines per driver — focused driver drawn last (on top) */}
           {codes
@@ -184,7 +157,7 @@ export default function GapChart({ data }: { data: GapData }) {
 
               if (!valid.length) return null
               const pts = valid.map(({ l, g }) => `${toX(l).toFixed(1)},${toY(g).toFixed(1)}`).join(" ")
-              const color = TEAM_COLORS[code] ?? "#666"
+              const color = TEAM_COLORS[code] ?? "#888888"
               const last = valid[valid.length - 1]
               const isF = focused === code
               const dim = focused !== null && !isF
@@ -206,7 +179,7 @@ export default function GapChart({ data }: { data: GapData }) {
                     fontSize={isF ? 12 : 10}
                     fontWeight={isF ? 700 : 400}
                     fill={color}
-                    fontFamily="var(--font-dm-mono)"
+                   
                   >
                     {code}
                   </text>
@@ -217,9 +190,9 @@ export default function GapChart({ data }: { data: GapData }) {
           {/* Crosshair + dots */}
           {tooltip && (
             <>
-              <line x1={tooltip.x} y1={cT} x2={tooltip.x} y2={cB} stroke="#ffffff1a" strokeWidth={1} strokeDasharray="4 3" />
+              <line x1={tooltip.x} y1={cT} x2={tooltip.x} y2={cB} className="stroke-text-muted" strokeWidth={1} strokeDasharray="4 3" />
               {tooltip.entries.map(({ code, gap }) => (
-                <circle key={code} cx={tooltip.x} cy={toY(gap)} r={4} fill={TEAM_COLORS[code] ?? "#666"} stroke="#0a0a0a" strokeWidth={1.5} />
+                <circle key={code} cx={tooltip.x} cy={toY(gap)} r={4} fill={TEAM_COLORS[code] ?? "#888888"} className="stroke-surface-0" strokeWidth={1.5} />
               ))}
             </>
           )}
@@ -227,16 +200,16 @@ export default function GapChart({ data }: { data: GapData }) {
 
         {tooltip && tooltip.entries.length > 0 && (
           <div
-            className="absolute top-2 pointer-events-none z-10 glass-card border border-[#1e1e1e] px-3 py-2 min-w-28"
+            className="pointer-events-none absolute top-2 z-10 border border-border-default bg-surface-1 px-3 py-2 corner-sm min-w-28"
             style={{
               left: tooltip.x / W > 0.72 ? "auto" : `calc(${(tooltip.x / W) * 100}% + 10px)`,
               right: tooltip.x / W > 0.72 ? `calc(${(1 - tooltip.x / W) * 100}% + 10px)` : "auto",
             }}
           >
-            <div className="text-[0.55rem] font-(family-name:--font-dm-mono) text-text-muted mb-1 tracking-wider">LAP {tooltip.lap}</div>
+            <div className="timing mb-1 text-[0.6875rem] text-text-muted">LAP {tooltip.lap}</div>
             {tooltip.entries.map(({ code, gap }) => (
-              <div key={code} className="flex justify-between gap-4 text-[0.6rem] font-(family-name:--font-dm-mono)">
-                <span style={{ color: TEAM_COLORS[code] ?? "#666" }}>{code}</span>
+              <div key={code} className="timing flex justify-between gap-4 text-[0.75rem]">
+                <span style={{ color: TEAM_COLORS[code] ?? "#888888" }}>{code}</span>
                 <span className="text-text-secondary">{fmtGap(gap)}</span>
               </div>
             ))}

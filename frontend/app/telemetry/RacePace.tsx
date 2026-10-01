@@ -2,7 +2,7 @@
 
 import { useState } from "react"
 import { TEAM_COLORS } from "@/lib/design"
-import DriverAvatar from "@/components/DriverAvatar"
+import { fmtLap } from "@/lib/f1"
 
 export interface RacePaceStint {
   stint: number | null
@@ -33,155 +33,127 @@ export interface RacePaceData {
   drivers: RacePaceDriver[]
 }
 
-function fmtLap(s: number | null): string {
-  if (s == null) return "—"
-  const m = Math.floor(s / 60)
-  const r = s % 60
-  return `${m}:${r.toFixed(3).padStart(6, "0")}`
-}
-
-function degColor(d: number | null): string {
-  if (d == null) return "#555"
-  if (d <= 0.03) return "#4ade80"
-  if (d <= 0.08) return "#facc15"
-  return "#ED1131"
+// Tyre degradation per lap: green is gentle, yellow is noticeable, red is heavy.
+function degClass(d: number | null): string {
+  if (d == null) return "text-text-muted"
+  if (d <= 0.03) return "text-f1-green"
+  if (d <= 0.08) return "text-f1-yellow"
+  return "text-f1-red"
 }
 
 const TYRE: Record<string, string> = {
   SOFT: "soft", MEDIUM: "medium", HARD: "hard",
   INTERMEDIATE: "intermediate", WET: "wet",
 }
-function tyreSrc(c: string): string {
-  return `/assets/tyres/${TYRE[(c || "").toUpperCase()] ?? "unknown"}.svg`
-}
 
-function CompoundIcon({ c, size = 15 }: { c: string; size?: number }) {
+function CompoundIcon({ c }: { c: string }) {
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={tyreSrc(c)} alt={c} width={size} height={size}
-      className="inline-block shrink-0" style={{ width: size, height: size }} />
+    <img src={`/assets/tyres/${TYRE[(c || "").toUpperCase()] ?? "unknown"}.svg`} alt={c} className="size-4 shrink-0" />
   )
 }
 
+const COLS = "grid-cols-[2rem_3.5rem_minmax(0,1fr)_5.5rem_4.5rem] sm:grid-cols-[2rem_4rem_minmax(0,1fr)_6rem_5rem_3rem]"
+
 export default function RacePace({ data }: { data: RacePaceData }) {
   const [open, setOpen] = useState<string | null>(null)
-  const ranked = data.drivers
-  const maxDelta = Math.max(0.001, ...ranked.map((d) => d.delta ?? 0))
+  const maxDelta = Math.max(0.001, ...data.drivers.map((d) => d.delta ?? 0))
 
   return (
-    <div className="glass-card overflow-hidden">
-      {/* header */}
-      <div className="flex items-baseline justify-between gap-3 px-4 py-3 border-b border-border-default flex-wrap">
-        <p className="section-label">Race Pace</p>
-        <p className="text-[0.55rem] font-(family-name:--font-dm-mono) text-text-dim uppercase tracking-widest">
-          clean-air median · in/out, lap 1 &amp; SC/VSC excluded
-        </p>
-      </div>
+    <div>
+      <p className="max-w-[70ch] text-[0.875rem] text-text-muted">
+        Median lap in clean air. In and out laps, lap 1 and safety car laps are left out. Select a driver for stints and
+        tyre wear.
+      </p>
 
-      {/* column header */}
-      <div
-        className="hidden sm:grid items-center gap-3 px-4 py-2 border-b border-border-subtle
-                   text-[0.55rem] font-(family-name:--font-dm-mono) uppercase tracking-widest text-text-muted"
-        style={{ gridTemplateColumns: "2rem 5.5rem 1fr 5rem 4.5rem 3rem" }}
-      >
+      <div className={`label mt-6 grid h-10 items-center gap-3 border-b border-border-default ${COLS}`}>
         <span>Fin</span>
         <span>Driver</span>
-        <span>Gap to fastest</span>
+        <span>Gap to the fastest</span>
         <span className="text-right">Median</span>
-        <span className="text-right">Δ</span>
-        <span className="text-right">Laps</span>
+        <span className="text-right">Delta</span>
+        <span className="hidden text-right sm:block">Laps</span>
       </div>
 
-      {ranked.map((d) => {
-        const color = TEAM_COLORS[d.code] ?? "#888"
-        const isOpen = open === d.code
-        const barPct = d.delta == null ? 0 : Math.max(2, (d.delta / maxDelta) * 100)
-        return (
-          <div key={d.code} className="border-b border-border-subtle last:border-0">
-            {/* main row */}
-            <button
-              onClick={() => setOpen(isOpen ? null : d.code)}
-              className="w-full grid items-center gap-3 px-4 py-2.5 text-left hover:bg-surface-1/60 transition-colors cursor-pointer"
-              style={{ gridTemplateColumns: "2rem 5.5rem 1fr 5rem 4.5rem 3rem", boxShadow: `inset 3px 0 0 ${color}` }}
-            >
-              <span className="font-(family-name:--font-orbitron) font-bold tabular-nums text-sm text-text-secondary">
-                {d.finish ?? "—"}
-              </span>
-              <div className="flex items-center gap-2 min-w-0">
-                <DriverAvatar code={d.code} slug={undefined} size={22} />
-                <span className="font-(family-name:--font-f1-regular) text-sm tracking-wider" style={{ color }}>
-                  {d.code}
-                </span>
-              </div>
-              {/* gap bar */}
-              <div className="h-2.5 w-full rounded-sm bg-surface-2 overflow-hidden">
-                <div className="h-full rounded-sm" style={{ width: `${barPct}%`, background: color, opacity: d.delta === 0 ? 1 : 0.55 }} />
-              </div>
-              <span className="text-right font-(family-name:--font-orbitron) tabular-nums text-text-primary text-sm">
-                {fmtLap(d.median)}
-              </span>
-              <span
-                className="text-right font-(family-name:--font-orbitron) tabular-nums text-xs"
-                style={{ color: d.delta === 0 ? "#4ade80" : "#aaa" }}
+      <ol>
+        {data.drivers.map((d) => {
+          const color = TEAM_COLORS[d.code] ?? "#888888"
+          const isOpen = open === d.code
+          const barPct = d.delta == null ? 0 : Math.max(2, (d.delta / maxDelta) * 100)
+          return (
+            <li key={d.code} className="border-b border-border-subtle">
+              <button
+                onClick={() => setOpen(isOpen ? null : d.code)}
+                aria-expanded={isOpen}
+                className={`grid h-12 w-full items-center gap-3 text-left transition-colors hover:bg-surface-1 ${COLS}`}
               >
-                {d.delta == null ? "—" : d.delta === 0 ? "LEAD" : `+${d.delta.toFixed(3)}`}
-              </span>
-              <span className="text-right font-(family-name:--font-dm-mono) text-text-dim tabular-nums text-[0.7rem]">
-                {d.clean_laps}
-              </span>
-            </button>
+                <span className="timing text-[0.9375rem] text-text-secondary">{d.finish ?? "—"}</span>
+                <span className="flex items-center gap-2">
+                  <span className="h-5 w-0.75" style={{ background: color }} aria-hidden="true" />
+                  <span className="timing text-[0.9375rem]">{d.code}</span>
+                </span>
+                <span className="h-2 bg-surface-2" aria-hidden="true">
+                  <span className="block h-full" style={{ width: `${barPct}%`, background: color, opacity: d.delta === 0 ? 1 : 0.6 }} />
+                </span>
+                <span className="timing text-right text-[0.9375rem]">{fmtLap(d.median)}</span>
+                <span className={`timing text-right text-[0.8125rem] ${d.delta === 0 ? "text-f1-green" : "text-text-secondary"}`}>
+                  {d.delta == null ? "—" : d.delta === 0 ? "FASTEST" : `+${d.delta.toFixed(3)}`}
+                </span>
+                <span className="timing hidden text-right text-[0.8125rem] text-text-muted sm:block">{d.clean_laps}</span>
+              </button>
 
-            {/* expanded: stints + compounds */}
-            {isOpen && (
-              <div className="px-4 pb-4 pt-1 bg-surface-1/40 space-y-3">
-                {/* summary chips */}
-                <div className="flex flex-wrap gap-x-5 gap-y-1 text-[0.6rem] font-(family-name:--font-dm-mono) text-text-muted pt-2">
-                  <span>BEST <span className="text-text-secondary tabular-nums">{fmtLap(d.best)}</span></span>
-                  <span>MEAN <span className="text-text-secondary tabular-nums">{fmtLap(d.mean)}</span></span>
-                  <span>CONSISTENCY <span className="text-text-secondary tabular-nums">±{d.std?.toFixed(3) ?? "—"}s</span></span>
-                </div>
-
-                {/* per compound */}
-                {d.compounds.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {d.compounds.map((c) => (
-                      <div key={c.compound} className="flex items-center gap-1.5 px-2 py-1 rounded-sm border border-border-muted">
-                        <CompoundIcon c={c.compound} />
-                        <span className="text-[0.6rem] font-(family-name:--font-dm-mono) text-text-secondary tabular-nums">
-                          {fmtLap(c.median)}
-                        </span>
-                        <span className="text-[0.55rem] font-(family-name:--font-dm-mono) text-text-dim">{c.laps}L</span>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* per stint with degradation */}
-                <div className="space-y-1">
-                  <p className="text-[0.55rem] font-(family-name:--font-dm-mono) uppercase tracking-widest text-text-dim">
-                    Stints
-                  </p>
-                  {d.stints.map((s, i) => (
-                    <div key={i} className="flex items-center gap-3 py-1 border-b border-border-subtle last:border-0">
-                      <span className="w-5 text-[0.6rem] font-(family-name:--font-dm-mono) text-text-dim tabular-nums">{i + 1}</span>
-                      <CompoundIcon c={s.compound} />
-                      <span className="text-[0.62rem] font-(family-name:--font-dm-mono) text-text-muted w-24 tabular-nums">
-                        L{s.lap_start}–{s.lap_end} · {s.laps}
-                      </span>
-                      <span className="text-[0.62rem] font-(family-name:--font-orbitron) text-text-secondary tabular-nums w-16">
-                        {fmtLap(s.median)}
-                      </span>
-                      <span className="text-[0.6rem] font-(family-name:--font-dm-mono) tabular-nums ml-auto" style={{ color: degColor(s.deg) }}>
-                        {s.deg == null ? "—" : `${s.deg > 0 ? "+" : ""}${s.deg.toFixed(3)}s/lap`}
-                      </span>
+              {isOpen && (
+                <div className="space-y-4 pb-5 pl-0 pt-1 sm:pl-24">
+                  <dl className="flex flex-wrap gap-x-8 gap-y-2 text-[0.8125rem]">
+                    <div>
+                      <dt className="label inline">Best </dt>
+                      <dd className="timing inline text-text-secondary">{fmtLap(d.best)}</dd>
                     </div>
-                  ))}
+                    <div>
+                      <dt className="label inline">Mean </dt>
+                      <dd className="timing inline text-text-secondary">{fmtLap(d.mean)}</dd>
+                    </div>
+                    <div>
+                      <dt className="label inline">Consistency </dt>
+                      <dd className="timing inline text-text-secondary">±{d.std?.toFixed(3) ?? "—"}S</dd>
+                    </div>
+                  </dl>
+
+                  <table className="w-full max-w-xl border-collapse text-[0.8125rem]">
+                    <thead>
+                      <tr className="border-b border-border-subtle">
+                        <th scope="col" className="label h-8 text-left font-medium">Stint</th>
+                        <th scope="col" className="label h-8 text-left font-medium">Laps</th>
+                        <th scope="col" className="label h-8 text-right font-medium">Median</th>
+                        <th scope="col" className="label h-8 text-right font-medium">Wear per lap</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {d.stints.map((s, i) => (
+                        <tr key={i} className="h-9 border-b border-border-subtle last:border-b-0">
+                          <td>
+                            <span className="flex items-center gap-2">
+                              <span className="timing w-4 text-text-muted">{i + 1}</span>
+                              <CompoundIcon c={s.compound} />
+                            </span>
+                          </td>
+                          <td className="timing text-text-secondary">
+                            L{s.lap_start}–{s.lap_end} <span className="text-text-muted">({s.laps})</span>
+                          </td>
+                          <td className="timing text-right">{fmtLap(s.median)}</td>
+                          <td className={`timing text-right ${degClass(s.deg)}`}>
+                            {s.deg == null ? "—" : `${s.deg > 0 ? "+" : ""}${s.deg.toFixed(3)}S`}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
-              </div>
-            )}
-          </div>
-        )
-      })}
+              )}
+            </li>
+          )
+        })}
+      </ol>
     </div>
   )
 }

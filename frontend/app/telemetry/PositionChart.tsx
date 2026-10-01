@@ -1,14 +1,15 @@
 "use client"
 
-import { useState, useRef, useCallback } from "react"
+import { useState, useRef } from "react"
+import DriverToggles from "./DriverToggles"
 import { TEAM_COLORS } from "@/lib/design"
+import { useWidth } from "@/lib/useWidth"
 
 export interface PositionData {
   session: string
   drivers: Record<string, { lap_numbers: number[]; positions: number[] }>
 }
 
-const W = 1000
 const H = 340
 const PAD = { top: 14, right: 64, bottom: 38, left: 42 }
 const MAX_POS = 22
@@ -35,9 +36,7 @@ export default function PositionChart({ data }: { data: PositionData }) {
     x: number; lap: number; entries: { code: string; pos: number }[]
   } | null>(null)
   const svgRef = useRef<SVGSVGElement>(null)
-
-  const toggle = (code: string) =>
-    setHidden((prev) => { const n = new Set(prev); n.has(code) ? n.delete(code) : n.add(code); return n })
+  const [chartRef, W] = useWidth()
 
   const cL = PAD.left, cR = W - PAD.right, cT = PAD.top, cB = H - PAD.bottom
   const allLaps = codes.flatMap((c) => data.drivers[c].lap_numbers)
@@ -46,7 +45,7 @@ export default function PositionChart({ data }: { data: PositionData }) {
   const toX = (lap: number) => lerp(lap, minLap, maxLap, cL, cR)
   const toY = (pos: number) => lerp(pos, 1, MAX_POS, cT, cB)
 
-  const handleMove = useCallback((e: React.MouseEvent<SVGSVGElement>) => {
+  function handleMove(e: React.PointerEvent<SVGSVGElement>) {
     if (!svgRef.current) return
     const rect = svgRef.current.getBoundingClientRect()
     const vx = ((e.clientX - rect.left) / rect.width) * W
@@ -66,53 +65,32 @@ export default function PositionChart({ data }: { data: PositionData }) {
     }
     entries.sort((a, b) => a.pos - b.pos)
     setTooltip({ x: toX(lap), lap, entries })
-  }, [codes, hidden, data, minLap, maxLap, cL, cR])
+  }
 
   const posTicks = [1, 5, 10, 15, 20]
   const lapTicks: number[] = []
   for (let l = Math.ceil(minLap / 10) * 10; l <= maxLap; l += 10) lapTicks.push(l)
 
   return (
-    <div className="glass-card p-4 space-y-3">
-      <div className="flex flex-wrap gap-2">
-        {codes.map((code) => {
-          const color = TEAM_COLORS[code] ?? "#666"
-          const on = !hidden.has(code)
-          return (
-            <button
-              key={code}
-              onClick={() => toggle(code)}
-              className="flex items-center gap-1.5 px-2 py-1 rounded text-[0.6rem] font-(family-name:--font-dm-mono) uppercase tracking-wider transition-all cursor-pointer border"
-              style={{
-                opacity: on ? 1 : 0.25,
-                backgroundColor: on ? `${color}1a` : "transparent",
-                color: on ? color : "#444",
-                borderColor: on ? `${color}44` : "#222",
-              }}
-            >
-              <span className="inline-block w-3 h-0.5 rounded" style={{ backgroundColor: on ? color : "#444" }} />
-              {code}
-            </button>
-          )
-        })}
-      </div>
+    <div className="min-w-0 space-y-5">
+      <DriverToggles codes={codes} hidden={hidden} onChange={setHidden} />
 
-      <div className="relative">
+      <div ref={chartRef} className="relative">
         <svg
           ref={svgRef}
           viewBox={`0 0 ${W} ${H}`}
           width="100%"
-          className="block cursor-crosshair select-none"
-          onMouseMove={handleMove}
-          onMouseLeave={() => setTooltip(null)}
+          className="timing block cursor-crosshair touch-pan-y select-none"
+          onPointerMove={handleMove}
+          onPointerLeave={() => setTooltip(null)}
         >
           {/* Horizontal grid — one per position tick */}
           {posTicks.map((pos) => {
             const y = toY(pos)
             return (
               <g key={pos}>
-                <line x1={cL} y1={y} x2={cR} y2={y} stroke="#1a1a1a" strokeWidth={1} />
-                <text x={cL - 6} y={y + 4} fontSize={12} fill="#444" textAnchor="end" fontFamily="var(--font-dm-mono)">
+                <line x1={cL} y1={y} x2={cR} y2={y} className="stroke-border-subtle" strokeWidth={1} />
+                <text x={cL - 6} y={y + 4} fontSize={12} className="fill-text-muted" textAnchor="end">
                   P{pos}
                 </text>
               </g>
@@ -124,15 +102,15 @@ export default function PositionChart({ data }: { data: PositionData }) {
             const x = toX(lap)
             return (
               <g key={lap}>
-                <line x1={x} y1={cT} x2={x} y2={cB} stroke="#111" strokeWidth={1} />
-                <text x={x} y={H - 10} fontSize={11} fill="#444" textAnchor="middle" fontFamily="var(--font-dm-mono)">
+                <line x1={x} y1={cT} x2={x} y2={cB} className="stroke-surface-2" strokeWidth={1} />
+                <text x={x} y={cB + 16} fontSize={11} className="fill-text-muted" textAnchor="middle">
                   {lap}
                 </text>
               </g>
             )
           })}
 
-          <text x={(cL + cR) / 2} y={H - 2} fontSize={11} fill="#333" textAnchor="middle" fontFamily="var(--font-dm-mono)">
+          <text x={(cL + cR) / 2} y={H - 2} fontSize={11} className="fill-text-muted" textAnchor="middle">
             LAP
           </text>
 
@@ -140,13 +118,13 @@ export default function PositionChart({ data }: { data: PositionData }) {
           {codes.filter((c) => !hidden.has(c)).map((code) => {
             const { lap_numbers, positions } = data.drivers[code]
             const pts = lap_numbers.map((l, i) => `${toX(l).toFixed(1)},${toY(positions[i]).toFixed(1)}`).join(" ")
-            const color = TEAM_COLORS[code] ?? "#666"
+            const color = TEAM_COLORS[code] ?? "#888888"
             const lastLap = lap_numbers[lap_numbers.length - 1]
             const lastPos = positions[positions.length - 1]
             return (
               <g key={code}>
                 <polyline points={pts} fill="none" stroke={color} strokeWidth={2} strokeLinecap="round" strokeLinejoin="round" opacity={0.85} />
-                <text x={toX(lastLap) + 5} y={toY(lastPos) + 4} fontSize={10} fill={color} fontFamily="var(--font-dm-mono)">{code}</text>
+                <text x={toX(lastLap) + 5} y={toY(lastPos) + 4} fontSize={10} fill={color}>{code}</text>
               </g>
             )
           })}
@@ -154,9 +132,9 @@ export default function PositionChart({ data }: { data: PositionData }) {
           {/* Crosshair + dots */}
           {tooltip && (
             <>
-              <line x1={tooltip.x} y1={cT} x2={tooltip.x} y2={cB} stroke="#ffffff1a" strokeWidth={1} strokeDasharray="4 3" />
+              <line x1={tooltip.x} y1={cT} x2={tooltip.x} y2={cB} className="stroke-text-muted" strokeWidth={1} strokeDasharray="4 3" />
               {tooltip.entries.map(({ code, pos }) => (
-                <circle key={code} cx={tooltip.x} cy={toY(pos)} r={4} fill={TEAM_COLORS[code] ?? "#666"} stroke="#0a0a0a" strokeWidth={1.5} />
+                <circle key={code} cx={tooltip.x} cy={toY(pos)} r={4} fill={TEAM_COLORS[code] ?? "#888888"} className="stroke-surface-0" strokeWidth={1.5} />
               ))}
             </>
           )}
@@ -165,16 +143,16 @@ export default function PositionChart({ data }: { data: PositionData }) {
         {/* Floating tooltip */}
         {tooltip && tooltip.entries.length > 0 && (
           <div
-            className="absolute top-2 pointer-events-none z-10 glass-card border border-[#1e1e1e] px-3 py-2 min-w-24"
+            className="pointer-events-none absolute top-2 z-10 border border-border-default bg-surface-1 px-3 py-2 corner-sm min-w-24"
             style={{
               left: tooltip.x / W > 0.72 ? "auto" : `calc(${(tooltip.x / W) * 100}% + 10px)`,
               right: tooltip.x / W > 0.72 ? `calc(${(1 - tooltip.x / W) * 100}% + 10px)` : "auto",
             }}
           >
-            <div className="text-[0.55rem] font-(family-name:--font-dm-mono) text-text-muted mb-1 tracking-wider">LAP {tooltip.lap}</div>
+            <div className="timing mb-1 text-[0.6875rem] text-text-muted">LAP {tooltip.lap}</div>
             {tooltip.entries.map(({ code, pos }) => (
-              <div key={code} className="flex justify-between gap-4 text-[0.6rem] font-(family-name:--font-dm-mono)">
-                <span style={{ color: TEAM_COLORS[code] ?? "#666" }}>{code}</span>
+              <div key={code} className="timing flex justify-between gap-4 text-[0.75rem]">
+                <span style={{ color: TEAM_COLORS[code] ?? "#888888" }}>{code}</span>
                 <span className="text-text-secondary">P{pos}</span>
               </div>
             ))}

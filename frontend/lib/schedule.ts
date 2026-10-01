@@ -1,7 +1,7 @@
 // Server-side schedule fetch shared by the SSR pages (dashboard, telemetry, predict, compare).
 // Server components can't use the relative `/api/*` path, so they call the backend directly
 // via API_URL — or, in demo mode, read the snapshot straight off disk.
-import type { F1Event } from "@/app/dashboard/page"
+import type { F1Event } from "@/lib/f1"
 import { DEMO_MODE, readDemo } from "@/lib/demo"
 
 export async function getSchedule(): Promise<{ events: F1Event[]; backendDown: boolean }> {

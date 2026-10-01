@@ -30,7 +30,7 @@ const FLAG_COLOR: Record<string, string> = {
   GREEN: "#4ade80",
   YELLOW: "#facc15",
   "DOUBLE YELLOW": "#f59e0b",
-  RED: "#ED1131",
+  RED: "#E10600",
   BLUE: "#3b82f6",
   CHEQUERED: "#e0e0e0",
   CLEAR: "#3f3f3f",
@@ -40,12 +40,12 @@ const KIND: Record<
   RaceControlMessage["kind"],
   { label: string; color: string; glyph: string }
 > = {
-  safety: { label: "Safety Car", color: "#facc15", glyph: "SC" },
-  flag: { label: "Flags", color: "#4ade80", glyph: "⚑" },
-  steward: { label: "Stewards", color: "#ED1131", glyph: "§" },
-  track_limits: { label: "Track Limits", color: "#c084fc", glyph: "⊘" },
+  safety: { label: "Safety car", color: "#facc15", glyph: "SC" },
+  flag: { label: "Flags", color: "#4ade80", glyph: "FLAG" },
+  steward: { label: "Stewards", color: "#E10600", glyph: "FIA" },
+  track_limits: { label: "Track limits", color: "#c084fc", glyph: "TL" },
   drs: { label: "DRS", color: "#00D7B6", glyph: "DRS" },
-  other: { label: "Other", color: "#5a5a5a", glyph: "•" },
+  other: { label: "Other", color: "#8a8e96", glyph: "INFO" },
 }
 
 /** Normalise kind — older backends may not send it; bucket those as "other". */
@@ -59,35 +59,13 @@ function accentFor(m: RaceControlMessage): string {
   return KIND[kindOf(m)].color
 }
 
-function SummaryChip({
-  label,
-  value,
-  accent,
-  highlight,
-}: {
-  label: string
-  value: number
-  accent: string
-  highlight?: boolean
-}) {
-  const on = value > 0
+function SummaryStat({ label, value, accent }: { label: string; value: number; accent: string }) {
   return (
-    <div
-      className="glass-card px-3 py-2.5 flex flex-col gap-1 transition-colors"
-      style={{
-        boxShadow: on ? `inset 2px 0 0 ${accent}` : undefined,
-        borderColor: highlight && on ? `${accent}55` : undefined,
-      }}
-    >
-      <span
-        className="font-(family-name:--font-orbitron) text-lg font-bold tabular-nums leading-none"
-        style={{ color: on ? accent : "#3a3a3a" }}
-      >
+    <div>
+      <dt className="label">{label}</dt>
+      <dd className="timing mt-1.5 text-[1.5rem] leading-none" style={{ color: value > 0 ? accent : "var(--color-text-dim)" }}>
         {value}
-      </span>
-      <span className="text-[0.5rem] font-(family-name:--font-dm-mono) uppercase tracking-widest text-text-muted leading-tight">
-        {label}
-      </span>
+      </dd>
     </div>
   )
 }
@@ -119,104 +97,69 @@ export default function RaceControl({ data }: { data: RaceControlData }) {
   ]
 
   return (
-    <div className="space-y-5">
-      {/* ── Incident summary ─────────────────────────────────── */}
-      <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-7 gap-2">
-        <SummaryChip label="Yellow Periods" value={s.yellow_flags} accent="#facc15" />
-        <SummaryChip label="Red Flags" value={s.red_flags} accent="#ED1131" highlight />
-        <SummaryChip label="Safety Car" value={s.safety_car} accent="#facc15" highlight />
-        <SummaryChip label="Virtual SC" value={s.virtual_sc} accent="#f59e0b" highlight />
-        <SummaryChip label="Penalties" value={s.penalties} accent="#ED1131" />
-        <SummaryChip label="Investigations" value={s.investigations} accent="#f59e0b" />
-        <SummaryChip label="Deleted Laps" value={s.deleted_laps} accent="#c084fc" />
-      </div>
+    <div className="space-y-8">
+      <dl className="grid grid-cols-3 gap-x-6 gap-y-6 sm:grid-cols-4 lg:grid-cols-7">
+        <SummaryStat label="Yellow periods" value={s.yellow_flags} accent="var(--color-f1-yellow)" />
+        <SummaryStat label="Red flags" value={s.red_flags} accent="var(--color-f1-red)" />
+        <SummaryStat label="Safety car" value={s.safety_car} accent="var(--color-f1-yellow)" />
+        <SummaryStat label="Virtual SC" value={s.virtual_sc} accent="var(--color-f1-yellow)" />
+        <SummaryStat label="Penalties" value={s.penalties} accent="var(--color-f1-red)" />
+        <SummaryStat label="Investigations" value={s.investigations} accent="var(--color-text-primary)" />
+        <SummaryStat label="Deleted laps" value={s.deleted_laps} accent="var(--color-f1-purple)" />
+      </dl>
 
-      {/* ── Feed ─────────────────────────────────────────────── */}
-      <div className="glass-card overflow-hidden">
-        {/* filter bar */}
-        <div className="flex flex-wrap items-center gap-1.5 px-3 py-2.5 border-b border-border-default bg-surface-1/40">
+      <div>
+        <div className="scroll-x gap-1 border-b border-border-subtle" role="group" aria-label="Filter messages">
           {filters.map((f) => {
             const active = filter === f
-            const meta = f === "all" ? null : KIND[f]
             const count = f === "all" ? data.messages.length : kindCounts.get(f) ?? 0
-            const color = meta?.color ?? "#e0e0e0"
             return (
               <button
                 key={f}
                 onClick={() => setFilter(f)}
-                className="group flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[0.6rem]
-                           font-(family-name:--font-dm-mono) uppercase tracking-widest transition-all cursor-pointer"
-                style={{
-                  background: active ? `${color}1f` : "transparent",
-                  border: `1px solid ${active ? `${color}66` : "var(--color-border-muted)"}`,
-                  color: active ? color : "var(--color-text-muted)",
-                }}
+                aria-pressed={active}
+                className={`relative h-11 shrink-0 px-3 text-[0.875rem] font-medium transition-colors ${
+                  active ? "text-text-primary" : "text-text-muted hover:text-text-primary"
+                }`}
               >
-                {meta && (
-                  <span
-                    className="h-1.5 w-1.5 rounded-full"
-                    style={{ background: color, boxShadow: active ? `0 0 6px ${color}` : undefined }}
-                  />
-                )}
-                {f === "all" ? "All" : meta!.label}
-                <span className="tabular-nums opacity-60">{count}</span>
+                {f === "all" ? "All" : KIND[f].label}
+                <span className="timing ml-1.5 text-[0.75rem] text-text-muted">{count}</span>
+                {active && <span className="absolute inset-x-3 bottom-0 h-0.5 bg-f1-red" aria-hidden="true" />}
               </button>
             )
           })}
         </div>
 
-        {/* messages */}
-        <div className="max-h-[32rem] overflow-y-auto">
+        <ol className="max-h-[34rem] overflow-y-auto" data-lenis-prevent>
           {filtered.length === 0 ? (
-            <p className="px-4 py-6 text-center text-xs font-(family-name:--font-dm-mono) text-text-muted">
-              No messages in this category.
-            </p>
+            <li className="py-6 text-text-muted">No messages in this category.</li>
           ) : (
             filtered.map((m, i) => {
               const accent = accentFor(m)
               const meta = KIND[kindOf(m)]
               return (
-                <div
-                  key={i}
-                  className="group flex items-start gap-3 px-4 py-2 border-b border-border-subtle last:border-0
-                             hover:bg-surface-2/50 transition-colors"
-                  style={{ boxShadow: `inset 2px 0 0 ${accent}` }}
-                >
-                  {/* lap */}
-                  <span className="font-(family-name:--font-orbitron) text-[0.6rem] tabular-nums text-text-dim w-9 shrink-0 pt-0.5 text-right">
-                    {m.lap != null ? `L${m.lap}` : "—"}
-                  </span>
-
-                  {/* kind glyph */}
+                <li key={i} className="grid grid-cols-[3rem_2.75rem_minmax(0,1fr)] items-start gap-3 border-b border-border-subtle py-2.5">
+                  <span className="timing pt-0.5 text-right text-[0.75rem] text-text-muted">{m.lap != null ? `L${m.lap}` : "—"}</span>
                   <span
-                    className="shrink-0 mt-px flex h-4 min-w-4 items-center justify-center rounded px-1
-                               text-[0.5rem] font-(family-name:--font-dm-mono) font-bold uppercase"
-                    style={{ background: `${accent}1f`, color: accent }}
+                    className="timing mt-0.5 justify-self-start px-1.5 py-0.5 text-[0.625rem]"
+                    style={{ color: accent, boxShadow: `inset 0 0 0 1px ${accent}` }}
                     title={meta.label}
                   >
                     {meta.glyph}
                   </span>
-
-                  {/* message */}
-                  <span className="flex-1 min-w-0 text-[0.72rem] font-(family-name:--font-dm-mono) text-text-secondary leading-relaxed">
+                  <span className="text-[0.875rem] leading-relaxed text-text-secondary">
                     {m.message}
+                    {m.flag && m.flag !== "CLEAR" && m.flag !== "None" && (
+                      <span className="timing ml-2 text-[0.6875rem]" style={{ color: accent }}>
+                        {m.flag}
+                      </span>
+                    )}
                   </span>
-
-                  {/* flag badge */}
-                  {m.flag && m.flag !== "CLEAR" && m.flag !== "None" && (
-                    <span
-                      className="shrink-0 rounded-sm px-1.5 py-0.5 text-[0.5rem] font-(family-name:--font-dm-mono)
-                                 uppercase tracking-widest"
-                      style={{ color: accent, border: `1px solid ${accent}55` }}
-                    >
-                      {m.flag}
-                    </span>
-                  )}
-                </div>
+                </li>
               )
             })
           )}
-        </div>
+        </ol>
       </div>
     </div>
   )

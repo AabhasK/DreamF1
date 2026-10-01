@@ -1,11 +1,15 @@
-import NavHeader from "@/components/NavHeader"
+import type { Metadata } from "next"
 import CirclesClient from "./CirclesClient"
 
-export default function CirclesPage() {
+export const metadata: Metadata = { title: "Circles" }
+
+export default async function CirclesPage({ searchParams }: { searchParams: Promise<{ circle?: string }> }) {
+  const { circle } = await searchParams
+  const initialCircle = circle && /^\d+$/.test(circle) ? Number(circle) : null
+
   return (
-    <div className="min-h-screen px-4 sm:px-6 py-6 sm:py-8 max-w-7xl mx-auto space-y-6 sm:space-y-8">
-      <NavHeader active="circles" />
-      <CirclesClient />
+    <div className="shell pt-8 sm:pt-10">
+      <CirclesClient initialCircle={initialCircle} />
     </div>
   )
 }

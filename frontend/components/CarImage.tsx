@@ -1,6 +1,7 @@
 "use client"
 
 import { useState } from "react"
+import { TEAMS } from "@/lib/design"
 
 // Maps the canonical team slug to the car asset filename (kept as supplied).
 const CAR_FILES: Record<string, string> = {
@@ -17,12 +18,29 @@ const CAR_FILES: Record<string, string> = {
   williams: "2026williamscarright.avif",
 }
 
-export default function CarImage({ slug, className }: { slug: string; className?: string }) {
+export default function CarImage({
+  slug,
+  className,
+  style,
+}: {
+  slug: string
+  className?: string
+  style?: React.CSSProperties
+}) {
   const [failed, setFailed] = useState(false)
   const file = CAR_FILES[slug]
   if (failed || !file) return null
+  const team = TEAMS.find((t) => t.slug === slug)?.name ?? slug
   return (
     // eslint-disable-next-line @next/next/no-img-element
-    <img src={`/assets/cars/${file}`} alt={`${slug} car`} onError={() => setFailed(true)} className={className} />
+    <img
+      src={`/assets/cars/${file}`}
+      alt={`${team} 2026 car`}
+      loading="lazy"
+      draggable={false}
+      onError={() => setFailed(true)}
+      className={className}
+      style={style}
+    />
   )
 }

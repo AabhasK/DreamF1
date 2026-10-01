@@ -1,24 +1,25 @@
 "use client"
 
-import { useEffect, useState } from "react"
+import { useEffect, useRef, useState } from "react"
+import StartLights from "@/components/StartLights"
+import Logo from "@/components/Logo"
 
 /**
- * F1 start-procedure preloader: five red lights come on one by one, hold,
- * then it's lights out — the overlay lifts and the app is revealed.
- *
- * Runs once per browser session (sessionStorage) so in-app navigation is
- * never blocked. Respects prefers-reduced-motion by skipping entirely.
+ * Start-procedure preloader: five lights come on one by one, hold, then it's
+ * lights out and the overlay lifts. Once per browser session, skippable with
+ * any key or tap, and skipped entirely for reduced motion.
  */
 
-const LIGHT_INTERVAL = 320 // ms between each light coming on
-const HOLD = 650 // all five lit, breath-hold before lights out
-const LIFT = 700 // overlay lift duration (matches CSS transition)
+const LIGHT_INTERVAL = 300
+const HOLD = 600
+const LIFT = 650
 
 type Phase = "lights" | "out" | "done"
 
 export default function Preloader() {
   const [phase, setPhase] = useState<Phase | null>(null)
   const [lit, setLit] = useState(0)
+  const timers = useRef<ReturnType<typeof setTimeout>[]>([])
 
   useEffect(() => {
     if (sessionStorage.getItem("df1-preloaded")) return
@@ -26,31 +27,36 @@ export default function Preloader() {
       sessionStorage.setItem("df1-preloaded", "1")
       return
     }
-    sessionStorage.setItem("df1-preloaded", "1")
-    setPhase("lights")
 
-    const timers: ReturnType<typeof setTimeout>[] = []
-    for (let i = 1; i <= 5; i++) {
-      timers.push(setTimeout(() => setLit(i), LIGHT_INTERVAL * i))
+    const t = timers.current
+    const lightsOut = () => {
+      // Marked as played only once it has actually run, so an interrupted
+      // mount (StrictMode, fast navigation) simply starts it again.
+      sessionStorage.setItem("df1-preloaded", "1")
+      t.forEach(clearTimeout)
+      setLit(0)
+      setPhase("out")
+      t.push(setTimeout(() => setPhase("done"), LIFT))
+      window.removeEventListener("keydown", lightsOut)
+      window.removeEventListener("pointerdown", lightsOut)
     }
-    const outAt = LIGHT_INTERVAL * 5 + HOLD
-    timers.push(
-      setTimeout(() => {
-        setLit(0) // lights out…
-        setPhase("out") // …and away we go
-      }, outAt),
-    )
-    timers.push(setTimeout(() => setPhase("done"), outAt + LIFT + 60))
-    return () => timers.forEach(clearTimeout)
+
+    setPhase("lights")
+    for (let i = 1; i <= 5; i++) t.push(setTimeout(() => setLit(i), LIGHT_INTERVAL * i))
+    t.push(setTimeout(lightsOut, LIGHT_INTERVAL * 5 + HOLD))
+    window.addEventListener("keydown", lightsOut)
+    window.addEventListener("pointerdown", lightsOut)
+
+    return () => {
+      t.forEach(clearTimeout)
+      window.removeEventListener("keydown", lightsOut)
+      window.removeEventListener("pointerdown", lightsOut)
+    }
   }, [])
 
-  // Lock scroll while the overlay is up
   useEffect(() => {
-    if (phase === "lights") {
-      document.documentElement.style.overflow = "hidden"
-    } else {
-      document.documentElement.style.overflow = ""
-    }
+    if (phase !== "lights") return
+    document.documentElement.style.overflow = "hidden"
     return () => {
       document.documentElement.style.overflow = ""
     }
@@ -60,42 +66,15 @@ export default function Preloader() {
 
   return (
     <div
-      aria-hidden
-      className="fixed inset-0 z-[9999] flex flex-col items-center justify-center bg-[#050505]"
+      aria-hidden="true"
+      className="fixed inset-0 z-60 flex flex-col items-center justify-center gap-10 bg-surface-0"
       style={{
-        transform: phase === "out" ? "translateY(-100%)" : "translateY(0)",
-        transition: `transform ${LIFT}ms cubic-bezier(0.76, 0, 0.24, 1)`,
+        transform: phase === "out" ? "translateY(-100%)" : "none",
+        transition: `transform ${LIFT}ms var(--ease-drive)`,
       }}
     >
-      {/* Gantry */}
-      <div className="flex gap-2.5 sm:gap-4">
-        {[1, 2, 3, 4, 5].map((i) => (
-          <div
-            key={i}
-            className="flex flex-col items-center gap-2 rounded-md border border-[#1a1a1a] bg-[#0c0c0c] px-2 py-2.5 sm:px-3 sm:py-3"
-          >
-            {/* each pod has two bulbs, like the real gantry */}
-            {[0, 1].map((b) => (
-              <span
-                key={b}
-                className="block h-6 w-6 sm:h-9 sm:w-9 rounded-full transition-all duration-150"
-                style={{
-                  background: lit >= i ? "#ED1131" : "#161616",
-                  boxShadow: lit >= i ? "0 0 18px 4px rgba(237,17,49,0.55)" : "inset 0 1px 3px rgba(0,0,0,0.8)",
-                }}
-              />
-            ))}
-          </div>
-        ))}
-      </div>
-
-      {/* Wordmark */}
-      <p className="mt-10 font-(family-name:--font-orbitron) text-lg sm:text-xl font-black tracking-[0.35em] text-text-primary">
-        DREAM<span className="text-f1-red">F1</span>
-      </p>
-      <p className="mt-2 h-3 text-[0.55rem] font-(family-name:--font-dm-mono) uppercase tracking-[0.3em] text-text-dim">
-        {lit === 5 ? "" : lit > 0 ? `${lit} of 5` : ""}
-      </p>
+      <StartLights lit={lit} size="lg" />
+      <Logo className="text-[1.35rem]" />
     </div>
   )
 }
