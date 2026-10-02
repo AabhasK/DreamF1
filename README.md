@@ -27,12 +27,12 @@
   <img src="frontend/public/predict.png" width="32%" />
 </p>
 
-All data is real 2026 Formula 1 data, pulled live from [FastF1](https://docs.fastf1.dev/). The UI is a dark, technical, glassmorphism design built to feel like a broadcast pit-wall.
+All data is real 2026 Formula 1 data, pulled from [FastF1](https://docs.fastf1.dev/). The design borrows from F1 timing graphics: dark ruled layouts instead of cards, the Formula 1 typeface for times and driver codes, and start lights and kerbs used as parts of the interface. Every page works on a phone.
 
 ## How it works
 
 1. **Register** — create an account, then create or join a **Circle** (private friend group) with an invite code.
-2. **Dashboard** — live countdown to the next session, championship standings, the last-race recap, and the upcoming-rounds strip.
+2. **Dashboard** — countdown to the next session with the weekend's timetable, the championship, the last race's podium, the constructors' fight and the season calendar.
 3. **Submit your race card** — lock in your picks before the race starts; the form is auto-locked to the next race and prevents picking the same driver twice.
 4. **Explore** — dig into per-round telemetry, full championship standings, and head-to-head driver comparisons.
 5. **Auto-scoring** — after the race, FastF1 fetches the official results and points are computed automatically.
@@ -64,12 +64,13 @@ All data is real 2026 Formula 1 data, pulled live from [FastF1](https://docs.fas
 Race classification · Lap times · Race pace · Position changes · Gaps to leader · Tyre strategy · Qualifying (Q1/Q2/Q3 knockout) · Sector times · Speed traces · **Circuit explorer** (detailed track diagrams + length/laps/record stats) · **Weather** (track/air temp, humidity, wind, rainfall over the race) · **Race Control** (flags, safety cars, VSC, penalties, investigations — filterable feed).
 
 ### Championship & comparison
-- **Standings** — full Drivers' and Constructors' championship tables with wins, podiums, poles, DNFs, form and gaps; a top-3 Constructors' podium showcase.
-- **Compare** — head-to-head driver telemetry comparison for any past round.
+- **Standings** — full Drivers' and Constructors' championship tables with wins, podiums, poles, DNFs, form and gaps, plus the season's leaders in each.
+- **Compare** — two drivers' fastest laps overlaid (speed, gap, throttle, brake, gear) on one shared cursor, with a track map coloured by who was quicker in each of 25 mini-sectors.
 
 ### Platform
 - **JWT authentication** — bcrypt-hashed passwords, validated sign-up with auto-login.
-- **Responsive** — dark glassmorphism UI works on mobile, tablet, and desktop.
+- **Responsive** — tables scroll sideways with the driver column pinned, and charts redraw at the screen's real width, so phones get readable axes.
+- **Demo mode** — when the backend is switched off, the site serves snapshots of real 2026 data and any username signs in, so the link always works.
 
 ## Scoring
 
@@ -88,7 +89,7 @@ Race classification · Lap times · Race pace · Position changes · Gaps to lea
 
 | Layer      | Tech                                         |
 | :--------- | :------------------------------------------- |
-| Frontend   | Next.js 16 (App Router), Tailwind CSS v4     |
+| Frontend   | Next.js 16 (App Router), React 19, Tailwind CSS v4 |
 | Charts     | Hand-built SVG (telemetry, weather, circuit) |
 | Backend    | FastAPI, SQLModel / SQLAlchemy, PostgreSQL   |
 | Auth       | JWT bearer, bcrypt                           |
@@ -97,12 +98,24 @@ Race classification · Lap times · Race pace · Position changes · Gaps to lea
 | Infra      | Docker, AWS EC2 + ECR, Vercel                |
 | CI/CD      | GitHub Actions (test, build, deploy)         |
 
+## Project structure
+
+```text
+backend/              FastAPI app: one router per area in app/routers/, the FastF1 session cache,
+                      tests, and scripts/snapshot_demo.py (writes the demo-mode data)
+frontend/             Next.js app: app/ (one folder per page), components/, lib/,
+                      demo-data/ (JSON snapshots), public/ (fonts, driver and car images, circuits)
+frontend-prototype/   the original Streamlit build, kept for reference
+infra/                Docker Compose files: production on EC2, and the full local stack
+.github/workflows/    CI, backend deploy, post-race cache warmer
+```
+
 ## Quick start
 
 ### Docker (recommended)
 
 ```bash
-git clone https://github.com/Aabhaskhandelwal/DreamF1
+git clone https://github.com/AabhasK/DreamF1
 cd DreamF1
 docker compose -f infra/compose.dev.yml up --build
 ```
@@ -116,19 +129,19 @@ docker compose -f infra/compose.dev.yml up --build
 ```bash
 # backend
 cd backend && uv sync
-uvicorn main:app --port 8080 --reload
+uv run uvicorn main:app --port 8080 --reload
 
-# Next.js frontend
+# Next.js frontend (runs on the bundled demo data until DEMO_MODE=false)
 cd frontend && npm install && npm run dev
 
 # Streamlit prototype (optional)
 cd frontend-prototype && uv sync
-streamlit run main.py
+uv run streamlit run main.py
 ```
 
 ### Environment variables
 
-Create a `.env` file in `/backend`:
+[`.env.example`](.env.example) lists every variable with safe placeholders. The backend reads `backend/.env`:
 
 ```env
 # database
@@ -143,10 +156,13 @@ SECRET_KEY=your_secret_key
 ALGORITHM=HS256
 ```
 
+The frontend reads `frontend/.env.local`. Leave `DEMO_MODE` unset to run on the bundled snapshots with no backend at all, or set `DEMO_MODE=false` and `API_URL=http://localhost:8080` to use your local backend.
+
 ## Deployment
 
-- **Frontend** → **Vercel**, auto-deployed on every push to `main`. Browser calls hit a relative `/api/*` path that `vercel.json` rewrites to the backend (avoids HTTPS→HTTP mixed-content).
-- **Backend** → **AWS EC2**, via **GitHub Actions**: build the image, push to **ECR**, then SSH in and `docker compose up` (Postgres + FastAPI). FastF1's cache is a persistent Docker volume.
+- **Frontend** → **Vercel**, auto-deployed on every push to `main`. The browser only calls a relative `/api/*` path, and `frontend/app/api/[...path]/route.ts` either forwards it to the backend (so the HTTPS page never calls HTTP directly) or, in demo mode, answers from the snapshots in `frontend/demo-data/`.
+- **Backend** → **AWS EC2**, via **GitHub Actions**: build the image, push to **ECR**, then SSH in and `docker compose up` (Postgres + FastAPI). FastF1's cache is a persistent Docker volume. The deploy and cache-warming jobs only run while the repo variable `BACKEND_LIVE` is `true`.
+- **Demo data** is refreshed after each race with `cd backend && uv run python scripts/snapshot_demo.py`, which calls the same endpoint functions as the live API, so the snapshots match it exactly.
 
 ## Roadmap
 
@@ -154,9 +170,11 @@ ALGORITHM=HS256
 - [x] Full telemetry explorer — 12 views per round, incl. circuit / weather / race control
 - [x] Drivers' & Constructors' championship standings
 - [x] My Picks history and head-to-head driver comparison
+- [x] Demo mode, so the site keeps working with the backend switched off
+- [x] Redesign in the style of F1 timing graphics, built to work on phones
 - [ ] ML pick advisor — historical data → podium probabilities & DNF risk per driver/circuit
 - [ ] Elastic IP + HTTPS (reverse proxy) on the backend
 
 ## Contributing
 
-Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for setup, the golden rules of the prediction logic, and [good first issues](https://github.com/Aabhaskhandelwal/DreamF1/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) to start with.
+Contributions are welcome — see [CONTRIBUTING.md](CONTRIBUTING.md) for setup, the golden rules of the prediction logic, and [good first issues](https://github.com/AabhasK/DreamF1/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) to start with.
